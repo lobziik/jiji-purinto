@@ -44,6 +44,9 @@ final class CatMXPrinter: ThermalPrinter {
     /// Current energy setting.
     private var energy: UInt8 = 0x60
 
+    /// Re-entrancy guard to detect duplicate print calls.
+    private var isPrintingInProgress = false
+
     /// Whether the printer is currently connected.
     var isConnected: Bool {
         peripheral != nil && writeCharacteristic != nil
@@ -173,7 +176,15 @@ final class CatMXPrinter: ThermalPrinter {
     }
 
     func print(bitmap: MonoBitmap, onProgress: @escaping (Double) -> Void) async throws(PrinterError) {
-        printerLogger.info("Starting print job: \(bitmap.width)x\(bitmap.height) pixels")
+        printerLogger.warning("PRINT CALLED - bitmap: \(bitmap.width)x\(bitmap.height)")
+
+        // Re-entrancy guard to detect duplicate print calls
+        guard !isPrintingInProgress else {
+            printerLogger.error("PRINT REJECTED - already printing (re-entrancy detected)")
+            throw .busy
+        }
+        isPrintingInProgress = true
+        defer { isPrintingInProgress = false }
 
         guard let characteristic = writeCharacteristic else {
             printerLogger.error("Print failed: writeCharacteristic is nil (not connected)")
@@ -191,7 +202,9 @@ final class CatMXPrinter: ThermalPrinter {
 
         do {
             let totalRows = bitmap.height
-            printerLogger.info("Total rows to print: \(totalRows)")
+            printerLogger.warning("Total rows to print: \(totalRows)")
+
+            var rowsSentCount = 0
 
             // Send each row with per-row delay to prevent buffer overflow
             for row in 0..<totalRows {
@@ -203,6 +216,7 @@ final class CatMXPrinter: ThermalPrinter {
                 }
 
                 try await sendCommand(lineCmd, to: characteristic)
+                rowsSentCount += 1
 
                 // Per-row delay to prevent printer buffer overflow
                 // 2ms per row is conservative; TypeScript reference uses similar timing
@@ -220,16 +234,15 @@ final class CatMXPrinter: ThermalPrinter {
                 }
             }
 
-            printerLogger.debug("All \(totalRows) rows sent")
+            printerLogger.warning("PRINT LOOP DONE - sent \(rowsSentCount) rows out of \(totalRows)")
 
             // Feed paper at end (no endPrint command needed for Cat/MX protocol)
-            // 3mm gap = 24 rows at 203 DPI (8 px/mm)
-            let feedCmd = CatMXCommands.feedPaper(lines: CatMXConstants.defaultFeedLines)
-            printerLogger.debug("Sending FEED_PAPER command (\(feedCmd.count) bytes): \(feedCmd.map { String(format: "%02X", $0) }.joined(separator: " "))")
+            let feedLines = CatMXConstants.defaultFeedLines
+            let feedCmd = CatMXCommands.feedPaper(lines: feedLines)
+            printerLogger.warning("Sending FEED_PAPER: \(feedLines) lines")
             try await sendCommand(feedCmd, to: characteristic)
-            printerLogger.debug("FEED_PAPER command sent successfully")
 
-            printerLogger.info("Print job completed successfully")
+            printerLogger.warning("Print job completed successfully")
 
         } catch let error as BLEError {
             printerLogger.error("Print failed with BLEError: \(error.localizedDescription)")
