@@ -27,6 +27,7 @@ enum TestPatternType: String, CaseIterable, Identifiable, Sendable {
     case verticalStripes = "Vertical Stripes"
     case horizontalStripes = "Horizontal Stripes"
     case checkerboard = "Checkerboard"
+    case checkerboard5cm = "Checkerboard 5cm"
     case leftBorder = "Left Border"
     case rightBorder = "Right Border"
     case arrow = "Arrow"
@@ -46,6 +47,8 @@ enum TestPatternType: String, CaseIterable, Identifiable, Sendable {
             return "Tests vertical sync"
         case .checkerboard:
             return "Tests bit order (MSB/LSB)"
+        case .checkerboard5cm:
+            return "Calibration: 2mm cells, 50mm total"
         case .leftBorder:
             return "Tests byte order (should be LEFT)"
         case .rightBorder:

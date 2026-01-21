@@ -48,6 +48,9 @@ enum CatMXConstants {
     /// Print width in bytes (1 bit per pixel).
     static let printWidthBytes = printWidth / 8  // 48 bytes
 
+    /// Default paper feed after print (3mm = 24 rows at 203 DPI).
+    static let defaultFeedLines: UInt16 = 24
+
     // MARK: - Command Identifiers
 
     /// Command IDs for Cat/MX protocol.

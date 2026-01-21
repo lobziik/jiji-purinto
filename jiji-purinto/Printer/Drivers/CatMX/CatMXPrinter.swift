@@ -207,7 +207,8 @@ final class CatMXPrinter: ThermalPrinter {
             printerLogger.debug("All \(totalRows) rows sent")
 
             // Feed paper at end (no endPrint command needed for Cat/MX protocol)
-            let feedCmd = CatMXCommands.feedPaper(lines: 40)
+            // 3mm gap = 24 rows at 203 DPI (8 px/mm)
+            let feedCmd = CatMXCommands.feedPaper(lines: CatMXConstants.defaultFeedLines)
             printerLogger.debug("Sending FEED_PAPER command (\(feedCmd.count) bytes): \(feedCmd.map { String(format: "%02X", $0) }.joined(separator: " "))")
             try await sendCommand(feedCmd, to: characteristic)
             printerLogger.debug("FEED_PAPER command sent successfully")

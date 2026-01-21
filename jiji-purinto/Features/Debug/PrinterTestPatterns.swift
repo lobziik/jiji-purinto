@@ -106,6 +106,61 @@ enum PrinterTestPatterns {
         return data
     }
 
+    // MARK: - Test Pattern 3b: Checkerboard 5cm (Calibration)
+
+    /// Creates a 5cm checkerboard calibration pattern with 2×2mm cells.
+    ///
+    /// Designed for geometry verification:
+    /// - Cell size: 2×2mm = 16×16px (at 203 DPI = 8 px/mm)
+    /// - Pattern height: 50mm = 400 rows
+    /// - Pattern width: 384px = 48 bytes (full print width)
+    /// - Total data: 400 rows × 48 bytes = 19,200 bytes
+    ///
+    /// Expected output: Perfect checkerboard with square 2mm cells.
+    /// - If cells are rectangular: paper feed is miscalibrated
+    /// - If diagonal stripes: bit order is inverted
+    /// - If vertical stripes: byte order is wrong
+    ///
+    /// - Returns: Tuple of raw bitmap data and pattern height in rows.
+    static func checkerboard5cm() -> (data: Data, height: Int) {
+        let cellSize = 16  // 2mm × 8 px/mm = 16 pixels
+        let patternHeight = 400  // 50mm × 8 px/mm = 400 rows
+
+        var data = Data()
+        data.reserveCapacity(patternHeight * widthBytes)
+
+        for y in 0..<patternHeight {
+            var row = [UInt8]()
+            row.reserveCapacity(widthBytes)
+
+            let cellY = y / cellSize
+
+            for byteIndex in 0..<widthBytes {
+                var byte: UInt8 = 0
+
+                // Process each bit in the byte
+                for bitIndex in 0..<8 {
+                    let pixelX = byteIndex * 8 + bitIndex
+                    let cellX = pixelX / cellSize
+
+                    // Checkerboard pattern: black cell when (cellY % 2) != (cellX % 2)
+                    let isBlackCell = (cellY % 2) != (cellX % 2)
+
+                    if isBlackCell {
+                        // MSB first: bit 7 is leftmost pixel
+                        byte |= (1 << (7 - bitIndex))
+                    }
+                }
+
+                row.append(byte)
+            }
+
+            data.append(contentsOf: row)
+        }
+
+        return (data, patternHeight)
+    }
+
     // MARK: - Test Pattern 4: Left Border
 
     /// Creates pattern with black bar on LEFT side only.

@@ -293,6 +293,8 @@ final class AppCoordinator: ObservableObject {
         case .checkerboard:
             let data = PrinterTestPatterns.checkerboard(height: 128)
             return (data, 128)
+        case .checkerboard5cm:
+            return PrinterTestPatterns.checkerboard5cm()
         case .leftBorder:
             let data = PrinterTestPatterns.leftBorder(height: 100)
             return (data, 100)
