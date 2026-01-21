@@ -1,0 +1,335 @@
+//
+//  AppCoordinator.swift
+//  jiji-purinto
+//
+//  Connects the FSM to SwiftUI views.
+//
+
+import SwiftUI
+import Combine
+
+/// Coordinates application state and connects FSM to SwiftUI.
+///
+/// This class acts as the single source of truth for the application state.
+/// It wraps the pure `AppFSM` and provides a reactive interface for SwiftUI views.
+///
+/// ## Usage
+/// ```swift
+/// @StateObject private var coordinator = AppCoordinator()
+///
+/// // Send events
+/// try coordinator.send(.openCamera)
+/// ```
+@MainActor
+final class AppCoordinator: ObservableObject {
+    // MARK: - Published State
+
+    /// Current application state.
+    @Published private(set) var state: AppState = .idle
+
+    /// The printer coordinator for managing printer connection and printing.
+    let printerCoordinator = PrinterCoordinator()
+
+    /// Whether the printer is connected and ready.
+    ///
+    /// This is used as a guard condition for the print transition.
+    var printerReady: Bool {
+        printerCoordinator.isReady
+    }
+
+    /// The original image before processing (for re-processing with new settings).
+    @Published private(set) var originalImage: UIImage?
+
+    /// The processed preview image for display.
+    @Published private(set) var processedPreview: UIImage?
+
+    /// Current processing settings (persisted between previews).
+    @Published var imageSettings: ImageSettings = .default
+
+    /// Whether settings sheet is being shown.
+    @Published var showingSettings: Bool = false
+
+    /// Whether image processing is in progress.
+    @Published private(set) var isProcessing: Bool = false
+
+    // MARK: - Private
+
+    private let fsm = AppFSM()
+    private let imageProcessor = ImageProcessor()
+    private var cancellables = Set<AnyCancellable>()
+
+    // MARK: - Initialization
+
+    init() {
+        // Subscribe to printer coordinator changes to trigger UI updates
+        printerCoordinator.objectWillChange
+            .sink { [weak self] _ in
+                self?.objectWillChange.send()
+            }
+            .store(in: &cancellables)
+
+        // Attempt to reconnect to last printer on launch
+        Task {
+            await printerCoordinator.reconnectToLast()
+        }
+    }
+
+    // MARK: - Event Handling
+
+    /// Sends an event to the FSM and updates the state.
+    ///
+    /// - Parameter event: The event to process.
+    /// - Throws: `FSMError` if the transition is invalid or a guard fails.
+    func send(_ event: AppEvent) throws {
+        let context = FSMContext(printerReady: printerReady)
+        let newState = try fsm.transition(from: state, event: event, context: context)
+        state = newState
+    }
+
+    /// Attempts to send an event, ignoring any errors.
+    ///
+    /// - Parameter event: The event to process.
+    /// - Returns: `true` if the transition succeeded, `false` otherwise.
+    ///
+    /// - Note: Use this only for UI actions where failure is expected (e.g., back button).
+    ///   For critical operations, use `send(_:)` and handle errors explicitly.
+    @discardableResult
+    func trySend(_ event: AppEvent) -> Bool {
+        do {
+            try send(event)
+            return true
+        } catch {
+            return false
+        }
+    }
+
+    // MARK: - Convenience Methods
+
+    /// Opens the camera for image selection.
+    func openCamera() throws {
+        try send(.openCamera)
+    }
+
+    /// Opens the gallery for image selection.
+    func openGallery() throws {
+        try send(.openGallery)
+    }
+
+    /// Cancels the current image selection.
+    func cancelSelection() throws {
+        try send(.cancelSelection)
+    }
+
+    /// Notifies that an image was selected.
+    ///
+    /// - Parameter image: The selected image.
+    func imageSelected(_ image: UIImage) throws {
+        try send(.imageSelected(image))
+    }
+
+    /// Notifies that image processing completed.
+    ///
+    /// - Parameter image: The processed preview image.
+    func processingComplete(_ image: UIImage) throws {
+        try send(.processingComplete(image))
+    }
+
+    /// Updates image processing settings.
+    ///
+    /// - Parameter settings: The new settings.
+    func updateSettings(_ settings: ImageSettings) throws {
+        try send(.settingsChanged(settings))
+    }
+
+    /// Initiates printing.
+    ///
+    /// - Throws: `FSMError.guardFailed` if the printer is not ready.
+    func print() throws {
+        try send(.print)
+    }
+
+    /// Updates print progress.
+    ///
+    /// - Parameter progress: Progress value from 0.0 to 1.0.
+    func updatePrintProgress(_ progress: Float) throws {
+        try send(.printProgress(progress))
+    }
+
+    /// Notifies that printing completed successfully.
+    func printSuccess() throws {
+        try send(.printSuccess)
+    }
+
+    /// Resets the app to the idle state.
+    func reset() throws {
+        try send(.reset)
+        originalImage = nil
+        processedPreview = nil
+    }
+
+    // MARK: - Image Processing
+
+    /// Processes the selected image and transitions to preview state.
+    ///
+    /// - Parameter image: The selected image to process.
+    func processImage(_ image: UIImage) async {
+        originalImage = image
+        isProcessing = true
+
+        do {
+            // Generate preview
+            let preview = try await imageProcessor.quickPreview(
+                image: image,
+                settings: imageSettings,
+                previewWidth: PrinterConstants.printWidth
+            )
+
+            processedPreview = preview
+
+            // Transition to preview state
+            try send(.processingComplete(preview))
+        } catch let processingError as ProcessingError {
+            // Transition to error state with specific processing error
+            try? send(.processingFailed(.processingFailed(reason: processingError.localizedDescription)))
+        } catch {
+            // Transition to error state with unexpected error
+            try? send(.processingFailed(.unexpected(error.localizedDescription)))
+        }
+
+        isProcessing = false
+    }
+
+    /// Re-processes the current image with updated settings.
+    ///
+    /// Called when settings change in the preview screen.
+    func reprocessWithCurrentSettings() async {
+        guard let image = originalImage else { return }
+
+        isProcessing = true
+
+        do {
+            let preview = try await imageProcessor.quickPreview(
+                image: image,
+                settings: imageSettings,
+                previewWidth: PrinterConstants.printWidth
+            )
+
+            processedPreview = preview
+
+            // Update preview state with new image and settings
+            try send(.settingsChanged(imageSettings))
+        } catch {
+            // Keep the old preview on error
+        }
+
+        isProcessing = false
+    }
+
+    /// Processes the image for printing and returns the MonoBitmap.
+    ///
+    /// - Returns: The processed MonoBitmap ready for printing.
+    /// - Throws: `ProcessingError` if processing fails.
+    func processForPrinting() async throws(ProcessingError) -> MonoBitmap {
+        guard let image = originalImage else {
+            throw .invalidImage
+        }
+
+        return try await imageProcessor.process(image: image, settings: imageSettings)
+    }
+
+    /// Prints the current image.
+    ///
+    /// Processes the original image and sends it to the printer.
+    ///
+    /// - Throws: `AppError` if processing or printing fails.
+    func printCurrentImage() async throws(AppError) {
+        guard printerReady else {
+            throw .printerNotReady
+        }
+
+        // Transition to printing state
+        do {
+            try send(.print)
+        } catch {
+            throw .unexpected("Failed to start printing: \(error.localizedDescription)")
+        }
+
+        // Process the image
+        let bitmap: MonoBitmap
+        do {
+            bitmap = try await processForPrinting()
+        } catch {
+            let appError = AppError.processingFailed(reason: error.localizedDescription)
+            try? send(.processingFailed(appError))
+            throw appError
+        }
+
+        // Print the bitmap with progress updates
+        do {
+            try await printerCoordinator.print(bitmap: bitmap)
+        } catch {
+            let appError = AppError.printingFailed(reason: error.localizedDescription)
+            try? send(.printFailed(appError))
+            throw appError
+        }
+
+        // Transition to done state
+        do {
+            try send(.printSuccess)
+        } catch {
+            // Already printed successfully, ignore state transition error
+        }
+    }
+}
+
+// MARK: - State Queries
+
+extension AppCoordinator {
+    /// Whether the app is currently showing an image picker.
+    var isSelectingImage: Bool {
+        if case .selecting = state {
+            return true
+        }
+        return false
+    }
+
+    /// The current image source being selected, if any.
+    var currentImageSource: ImageSource? {
+        if case .selecting(let source) = state {
+            return source
+        }
+        return nil
+    }
+
+    /// The current preview image, if in preview state.
+    var previewImage: UIImage? {
+        if case .preview(let image, _) = state {
+            return image
+        }
+        return nil
+    }
+
+    /// The current image settings, if in preview state.
+    var currentSettings: ImageSettings? {
+        if case .preview(_, let settings) = state {
+            return settings
+        }
+        return nil
+    }
+
+    /// The current print progress, if printing.
+    var printProgress: Float? {
+        if case .printing(let progress) = state {
+            return progress
+        }
+        return nil
+    }
+
+    /// The current error, if in error state.
+    var currentError: AppError? {
+        if case .error(let error) = state {
+            return error
+        }
+        return nil
+    }
+}

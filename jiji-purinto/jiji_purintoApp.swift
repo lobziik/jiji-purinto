@@ -9,9 +9,13 @@ import SwiftUI
 
 @main
 struct jiji_purintoApp: App {
+    /// The app coordinator managing application state.
+    @StateObject private var coordinator = AppCoordinator()
+
     var body: some Scene {
         WindowGroup {
             ContentView()
+                .environmentObject(coordinator)
         }
     }
 }
