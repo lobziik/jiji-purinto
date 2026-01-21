@@ -23,10 +23,10 @@ import UIKit
 /// let fsm = AppFSM()
 /// let nextState = try fsm.transition(
 ///     from: .idle,
-///     event: .openCamera,
+///     event: .openGallery,
 ///     context: FSMContext()
 /// )
-/// // nextState == .selecting(source: .camera)
+/// // nextState == .selecting(source: .gallery)
 /// ```
 struct AppFSM {
     /// Computes the next state given the current state and an event.
@@ -45,11 +45,15 @@ struct AppFSM {
     ) throws -> AppState {
         switch (state, event) {
         // MARK: - From idle
-        case (.idle, .openCamera):
-            return .selecting(source: .camera)
-
         case (.idle, .openGallery):
             return .selecting(source: .gallery)
+
+        case (.idle, .print):
+            // Allow printing from idle for debug test patterns
+            guard context.printerReady else {
+                throw FSMError.guardFailed(reason: "Printer is not ready")
+            }
+            return .printing(progress: 0)
 
         // MARK: - From selecting
         case (.selecting, .imageSelected):
@@ -78,9 +82,6 @@ struct AppFSM {
             }
             return .printing(progress: 0)
 
-        case (.preview, .openCamera):
-            return .selecting(source: .camera)
-
         case (.preview, .openGallery):
             return .selecting(source: .gallery)
 
@@ -100,9 +101,6 @@ struct AppFSM {
         // MARK: - From done
         case (.done, .reset):
             return .idle
-
-        case (.done, .openCamera):
-            return .selecting(source: .camera)
 
         case (.done, .openGallery):
             return .selecting(source: .gallery)

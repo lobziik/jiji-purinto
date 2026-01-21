@@ -2,16 +2,15 @@
 //  ImagePickerView.swift
 //  jiji-purinto
 //
-//  SwiftUI wrapper for UIImagePickerController.
+//  SwiftUI wrapper for PHPickerViewController.
 //
 
 import SwiftUI
 import PhotosUI
 
-/// SwiftUI wrapper for the system image picker (camera or photo library).
+/// SwiftUI wrapper for the system photo library picker.
 ///
-/// Uses UIImagePickerController for camera access and PHPickerViewController
-/// for photo library access (more modern API with better privacy).
+/// Uses PHPickerViewController for photo library access (modern API with better privacy).
 ///
 /// ## Usage
 /// ```swift
@@ -21,7 +20,6 @@ import PhotosUI
 /// Button("Select Photo") { showPicker = true }
 ///     .sheet(isPresented: $showPicker) {
 ///         ImagePickerView(
-///             source: .gallery,
 ///             onImageSelected: { image in
 ///                 selectedImage = image
 ///             },
@@ -32,45 +30,13 @@ import PhotosUI
 ///     }
 /// ```
 struct ImagePickerView: UIViewControllerRepresentable {
-    /// The image source type.
-    let source: ImageSource
-
     /// Called when an image is selected.
     let onImageSelected: (UIImage) -> Void
 
     /// Called when the picker is cancelled.
     let onCancel: () -> Void
 
-    func makeUIViewController(context: Context) -> UIViewController {
-        switch source {
-        case .camera:
-            return makeCameraPicker(context: context)
-        case .gallery:
-            return makePhotoPicker(context: context)
-        }
-    }
-
-    func updateUIViewController(_ uiViewController: UIViewController, context: Context) {
-        // No updates needed
-    }
-
-    func makeCoordinator() -> Coordinator {
-        Coordinator(onImageSelected: onImageSelected, onCancel: onCancel)
-    }
-
-    // MARK: - Camera Picker
-
-    private func makeCameraPicker(context: Context) -> UIViewController {
-        let picker = UIImagePickerController()
-        picker.sourceType = .camera
-        picker.delegate = context.coordinator
-        picker.allowsEditing = false
-        return picker
-    }
-
-    // MARK: - Photo Library Picker
-
-    private func makePhotoPicker(context: Context) -> UIViewController {
+    func makeUIViewController(context: Context) -> PHPickerViewController {
         var configuration = PHPickerConfiguration()
         configuration.selectionLimit = 1
         configuration.filter = .images
@@ -80,10 +46,18 @@ struct ImagePickerView: UIViewControllerRepresentable {
         return picker
     }
 
+    func updateUIViewController(_ uiViewController: PHPickerViewController, context: Context) {
+        // No updates needed
+    }
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(onImageSelected: onImageSelected, onCancel: onCancel)
+    }
+
     // MARK: - Coordinator
 
-    /// Coordinator handling delegate callbacks from both picker types.
-    final class Coordinator: NSObject, UIImagePickerControllerDelegate, UINavigationControllerDelegate, PHPickerViewControllerDelegate {
+    /// Coordinator handling delegate callbacks from photo picker.
+    final class Coordinator: NSObject, PHPickerViewControllerDelegate {
         let onImageSelected: (UIImage) -> Void
         let onCancel: () -> Void
 
@@ -92,24 +66,7 @@ struct ImagePickerView: UIViewControllerRepresentable {
             self.onCancel = onCancel
         }
 
-        // MARK: - UIImagePickerControllerDelegate (Camera)
-
-        func imagePickerController(
-            _ picker: UIImagePickerController,
-            didFinishPickingMediaWithInfo info: [UIImagePickerController.InfoKey: Any]
-        ) {
-            if let image = info[.originalImage] as? UIImage {
-                onImageSelected(image)
-            } else {
-                onCancel()
-            }
-        }
-
-        func imagePickerControllerDidCancel(_ picker: UIImagePickerController) {
-            onCancel()
-        }
-
-        // MARK: - PHPickerViewControllerDelegate (Photo Library)
+        // MARK: - PHPickerViewControllerDelegate
 
         func picker(_ picker: PHPickerViewController, didFinishPicking results: [PHPickerResult]) {
             guard let result = results.first else {
@@ -130,21 +87,11 @@ struct ImagePickerView: UIViewControllerRepresentable {
     }
 }
 
-// MARK: - Camera Availability
-
-extension ImagePickerView {
-    /// Checks if the camera is available on this device.
-    static var isCameraAvailable: Bool {
-        UIImagePickerController.isSourceTypeAvailable(.camera)
-    }
-}
-
 // MARK: - Preview
 
 #if DEBUG
 #Preview("Gallery Picker") {
     ImagePickerView(
-        source: .gallery,
         onImageSelected: { _ in },
         onCancel: { }
     )

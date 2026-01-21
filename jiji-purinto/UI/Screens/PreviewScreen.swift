@@ -93,7 +93,7 @@ struct PreviewScreen: View {
             .accessibilityLabel(coordinator.printerReady ? "Print" : "Print (printer not connected)")
         }
         .sheet(isPresented: $coordinator.showingSettings) {
-            SettingsSheet(settings: $coordinator.imageSettings, coordinator: coordinator)
+            SettingsSheet(settings: $coordinator.imageSettings)
         }
         .onChange(of: coordinator.imageSettings) { _ in
             // Reprocess image when settings change

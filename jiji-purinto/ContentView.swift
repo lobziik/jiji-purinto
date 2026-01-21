@@ -19,13 +19,12 @@ struct ContentView: View {
                 HomeScreen(coordinator: coordinator)
                     .transition(.opacity)
 
-            case .selecting(let source):
+            case .selecting:
                 // Show HomeScreen as base, with picker as sheet
                 HomeScreen(coordinator: coordinator)
                     .transition(.opacity)
                     .sheet(isPresented: .constant(true)) {
                         ImagePickerView(
-                            source: source,
                             onImageSelected: { image in
                                 Task {
                                     // Transition to processing and process the image
@@ -50,8 +49,8 @@ struct ContentView: View {
                     image: coordinator.processedPreview ?? image,
                     settings: settings,
                     onBack: {
-                        // Reset to idle on back
-                        coordinator.trySend(.reset)
+                        // Go back to gallery picker
+                        coordinator.trySend(.openGallery)
                     }
                 )
                 .transition(.move(edge: .trailing))
@@ -133,8 +132,8 @@ struct DoneScreen: View {
             Spacer()
 
             VStack(spacing: 16) {
-                BigButton("Print Another", systemImage: "camera") {
-                    coordinator.trySend(.openCamera)
+                BigButton("Print Another", systemImage: "photo.on.rectangle") {
+                    coordinator.trySend(.openGallery)
                 }
 
                 Button("Back to Home") {

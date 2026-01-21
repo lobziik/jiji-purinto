@@ -110,7 +110,7 @@ struct BigIconButton: View {
 }
 
 #Preview("Big Icon Button") {
-    BigIconButton(systemImage: "camera") {
-        print("Camera tapped")
+    BigIconButton(systemImage: "photo.on.rectangle") {
+        print("Gallery tapped")
     }
 }

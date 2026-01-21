@@ -14,9 +14,6 @@ import UIKit
 enum AppEvent: @unchecked Sendable {
     // MARK: - Image Selection
 
-    /// User wants to take a photo with the camera.
-    case openCamera
-
     /// User wants to select a photo from the gallery.
     case openGallery
 
@@ -67,8 +64,6 @@ enum AppEvent: @unchecked Sendable {
 extension AppEvent: CustomDebugStringConvertible {
     var debugDescription: String {
         switch self {
-        case .openCamera:
-            return "openCamera"
         case .openGallery:
             return "openGallery"
         case .cancelSelection:

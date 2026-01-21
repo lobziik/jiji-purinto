@@ -30,6 +30,19 @@ struct AppFSMGuardTests {
         }
     }
 
+    @Test("idle + print with printer NOT ready throws guardFailed")
+    func idle_print_printerNotReady_throwsGuardFailed() {
+        let context = FSMContext(printerReady: false)
+
+        #expect(throws: FSMError.self) {
+            _ = try fsm.transition(
+                from: .idle,
+                event: .print,
+                context: context
+            )
+        }
+    }
+
     @Test("preview + print with default context throws guardFailed")
     func preview_print_defaultContext_throwsGuardFailed() {
         // Default context has printerReady = false

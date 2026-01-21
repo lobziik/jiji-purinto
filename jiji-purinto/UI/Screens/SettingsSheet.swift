@@ -14,7 +14,6 @@ import SwiftUI
 /// - Contrast adjustment (0.5 to 2.0)
 /// - Dithering algorithm selection
 /// - Reset to defaults
-/// - Debug test patterns (when `DebugConfig.enableDebugMenu` is true)
 ///
 /// ## Design
 /// - Sliders for brightness/contrast with current value display
@@ -24,9 +23,6 @@ import SwiftUI
 struct SettingsSheet: View {
     /// Binding to the current image settings.
     @Binding var settings: ImageSettings
-
-    /// Optional coordinator for debug test pattern printing.
-    var coordinator: AppCoordinator?
 
     /// Dismiss action for the sheet.
     @Environment(\.dismiss) private var dismiss
@@ -134,33 +130,6 @@ struct SettingsSheet: View {
                         }
                     }
                     .disabled(settings == defaultSettings)
-                }
-
-                // MARK: - Debug Section
-
-                if DebugConfig.enableDebugMenu, let coordinator = coordinator {
-                    Section {
-                        ForEach(TestPatternType.allCases) { pattern in
-                            Button {
-                                Task {
-                                    dismiss()
-                                    try? await coordinator.printTestPattern(pattern)
-                                }
-                            } label: {
-                                VStack(alignment: .leading, spacing: 4) {
-                                    Text(pattern.rawValue)
-                                    Text(pattern.description)
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-                                }
-                            }
-                            .disabled(!coordinator.printerReady)
-                        }
-                    } header: {
-                        Label("Debug: Test Patterns", systemImage: "ladybug")
-                    } footer: {
-                        Text("Print test patterns to diagnose printer issues. Requires connected printer.")
-                    }
                 }
             }
             .navigationTitle("Settings")

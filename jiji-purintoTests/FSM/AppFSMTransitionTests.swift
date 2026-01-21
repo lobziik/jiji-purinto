@@ -17,16 +17,17 @@ struct AppFSMTransitionTests {
 
     // MARK: - From idle
 
-    @Test("idle + openCamera -> selecting(.camera)")
-    func idle_openCamera_transitionsToSelectingCamera() throws {
-        let next = try fsm.transition(from: .idle, event: .openCamera)
-        #expect(next == .selecting(source: .camera))
-    }
-
     @Test("idle + openGallery -> selecting(.gallery)")
     func idle_openGallery_transitionsToSelectingGallery() throws {
         let next = try fsm.transition(from: .idle, event: .openGallery)
         #expect(next == .selecting(source: .gallery))
+    }
+
+    @Test("idle + print (printer ready) -> printing (for debug test patterns)")
+    func idle_print_printerReady_transitionsToPrinting() throws {
+        let context = FSMContext(printerReady: true)
+        let next = try fsm.transition(from: .idle, event: .print, context: context)
+        #expect(next == .printing(progress: 0))
     }
 
     // MARK: - From selecting
@@ -34,7 +35,7 @@ struct AppFSMTransitionTests {
     @Test("selecting + imageSelected -> processing")
     func selecting_imageSelected_transitionsToProcessing() throws {
         let next = try fsm.transition(
-            from: .selecting(source: .camera),
+            from: .selecting(source: .gallery),
             event: .imageSelected(testImage)
         )
         #expect(next == .processing)
@@ -53,7 +54,7 @@ struct AppFSMTransitionTests {
     @Test("selecting + cancelSelection -> idle")
     func selecting_cancelSelection_transitionsToIdle() throws {
         let next = try fsm.transition(
-            from: .selecting(source: .camera),
+            from: .selecting(source: .gallery),
             event: .cancelSelection
         )
         #expect(next == .idle)
@@ -98,15 +99,6 @@ struct AppFSMTransitionTests {
         } else {
             Issue.record("Expected preview state")
         }
-    }
-
-    @Test("preview + openCamera -> selecting(.camera)")
-    func preview_openCamera_transitionsToSelecting() throws {
-        let next = try fsm.transition(
-            from: .preview(image: testImage, settings: .default),
-            event: .openCamera
-        )
-        #expect(next == .selecting(source: .camera))
     }
 
     @Test("preview + openGallery -> selecting(.gallery)")
@@ -174,12 +166,6 @@ struct AppFSMTransitionTests {
     func done_reset_transitionsToIdle() throws {
         let next = try fsm.transition(from: .done, event: .reset)
         #expect(next == .idle)
-    }
-
-    @Test("done + openCamera -> selecting(.camera)")
-    func done_openCamera_transitionsToSelecting() throws {
-        let next = try fsm.transition(from: .done, event: .openCamera)
-        #expect(next == .selecting(source: .camera))
     }
 
     @Test("done + openGallery -> selecting(.gallery)")

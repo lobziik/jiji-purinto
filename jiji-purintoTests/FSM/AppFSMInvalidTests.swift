@@ -17,13 +17,6 @@ struct AppFSMInvalidTests {
 
     // MARK: - From idle
 
-    @Test("idle + print throws invalidTransition")
-    func idle_print_throwsInvalidTransition() {
-        #expect(throws: FSMError.self) {
-            _ = try fsm.transition(from: .idle, event: .print)
-        }
-    }
-
     @Test("idle + printSuccess throws invalidTransition")
     func idle_printSuccess_throwsInvalidTransition() {
         #expect(throws: FSMError.self) {
@@ -51,18 +44,8 @@ struct AppFSMInvalidTests {
     func selecting_print_throwsInvalidTransition() {
         #expect(throws: FSMError.self) {
             _ = try fsm.transition(
-                from: .selecting(source: .camera),
-                event: .print
-            )
-        }
-    }
-
-    @Test("selecting + openCamera throws invalidTransition")
-    func selecting_openCamera_throwsInvalidTransition() {
-        #expect(throws: FSMError.self) {
-            _ = try fsm.transition(
                 from: .selecting(source: .gallery),
-                event: .openCamera
+                event: .print
             )
         }
     }
@@ -73,13 +56,6 @@ struct AppFSMInvalidTests {
     func processing_print_throwsInvalidTransition() {
         #expect(throws: FSMError.self) {
             _ = try fsm.transition(from: .processing, event: .print)
-        }
-    }
-
-    @Test("processing + openCamera throws invalidTransition")
-    func processing_openCamera_throwsInvalidTransition() {
-        #expect(throws: FSMError.self) {
-            _ = try fsm.transition(from: .processing, event: .openCamera)
         }
     }
 
@@ -113,16 +89,6 @@ struct AppFSMInvalidTests {
     }
 
     // MARK: - From printing
-
-    @Test("printing + openCamera throws invalidTransition")
-    func printing_openCamera_throwsInvalidTransition() {
-        #expect(throws: FSMError.self) {
-            _ = try fsm.transition(
-                from: .printing(progress: 0.5),
-                event: .openCamera
-            )
-        }
-    }
 
     @Test("printing + reset throws invalidTransition")
     func printing_reset_throwsInvalidTransition() {
@@ -166,13 +132,6 @@ struct AppFSMInvalidTests {
     func error_print_throwsInvalidTransition() {
         #expect(throws: FSMError.self) {
             _ = try fsm.transition(from: .error(.cancelled), event: .print)
-        }
-    }
-
-    @Test("error + openCamera throws invalidTransition")
-    func error_openCamera_throwsInvalidTransition() {
-        #expect(throws: FSMError.self) {
-            _ = try fsm.transition(from: .error(.cancelled), event: .openCamera)
         }
     }
 }

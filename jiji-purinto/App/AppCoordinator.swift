@@ -112,11 +112,6 @@ final class AppCoordinator: ObservableObject {
 
     // MARK: - Convenience Methods
 
-    /// Opens the camera for image selection.
-    func openCamera() throws {
-        try send(.openCamera)
-    }
-
     /// Opens the gallery for image selection.
     func openGallery() throws {
         try send(.openGallery)
@@ -249,6 +244,7 @@ final class AppCoordinator: ObservableObject {
     /// Prints a test pattern for printer diagnostics.
     ///
     /// Only available when `DebugConfig.enableDebugMenu` is true.
+    /// Uses proper FSM state transitions to show printing progress and done screen.
     ///
     /// - Parameter pattern: The test pattern type to print.
     /// - Throws: `AppError` if printer not ready or print fails.
