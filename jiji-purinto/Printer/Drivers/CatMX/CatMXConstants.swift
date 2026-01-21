@@ -36,12 +36,6 @@ enum CatMXConstants {
     /// Command prefix for all Cat/MX commands.
     static let commandPrefix: [UInt8] = [0x51, 0x78]
 
-    /// Default MTU (Maximum Transmission Unit) for BLE writes.
-    static let defaultMTU = 20
-
-    /// Optimal chunk size for print data (accounts for command overhead).
-    static let printDataChunkSize = 112
-
     /// Print width in pixels (fixed for Cat/MX printers).
     static let printWidth = 384
 

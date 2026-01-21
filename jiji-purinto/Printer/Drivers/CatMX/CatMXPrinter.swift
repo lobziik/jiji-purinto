@@ -310,7 +310,10 @@ final class CatMXPrinter: ThermalPrinter {
 
     // MARK: - Private Methods
 
-    /// Sends a command to the printer, chunking if necessary.
+    /// Sends a command to the printer.
+    ///
+    /// Commands must be sent as complete packets. CoreBluetooth handles
+    /// MTU negotiation automatically - manual chunking breaks the protocol.
     ///
     /// - Parameters:
     ///   - command: The command data to send.
@@ -322,28 +325,10 @@ final class CatMXPrinter: ThermalPrinter {
             throw BLEError.notConnected
         }
 
-        let mtu = CatMXConstants.defaultMTU
+        printerLogger.trace("Sending command (\(command.count) bytes)")
 
-        if command.count <= mtu {
-            // Single chunk
-            printerLogger.trace("Writing single chunk (\(command.count) bytes) to characteristic")
-            try await blePeripheral.write(data: command, to: characteristic, type: .withoutResponse)
-        } else {
-            // Split into chunks
-            printerLogger.trace("Splitting command (\(command.count) bytes) into chunks of \(mtu) bytes")
-            var offset = 0
-            var chunkCount = 0
-            while offset < command.count {
-                let chunkSize = min(mtu, command.count - offset)
-                let chunk = command[offset..<(offset + chunkSize)]
-                try await blePeripheral.write(data: Data(chunk), to: characteristic, type: .withoutResponse)
-                offset += chunkSize
-                chunkCount += 1
-
-                // Small delay between chunks
-                try await Task.sleep(nanoseconds: 1_000_000) // 1ms
-            }
-            printerLogger.trace("Sent \(chunkCount) chunks")
-        }
+        // Send command as a single write - CoreBluetooth handles MTU negotiation
+        // DO NOT split commands manually - it corrupts the packet structure
+        try await blePeripheral.write(data: command, to: characteristic, type: .withoutResponse)
     }
 }
