@@ -9,6 +9,9 @@ import Foundation
 import os
 @preconcurrency import CoreBluetooth
 
+/// Logger for BLE operations debugging.
+private let bleLogger = Logger(subsystem: "com.jiji-purinto", category: "BLE")
+
 /// Actor-based wrapper around CBCentralManager for BLE operations.
 ///
 /// Provides a safe, async/await API for scanning, connecting, and managing
@@ -74,22 +77,30 @@ actor BLEManager {
         }
     }
 
-    /// Scans for peripherals advertising the specified service.
+    /// Scans for peripherals, optionally filtering by service UUID or name patterns.
     ///
     /// - Parameters:
-    ///   - serviceUUID: The service UUID to scan for.
+    ///   - serviceUUID: Optional service UUID to scan for. If nil, scans for all devices.
+    ///   - namePatterns: Optional array of name prefixes to filter by. Empty means no filtering.
     ///   - timeout: Scan timeout in seconds.
     /// - Returns: Array of discovered printers.
     /// - Throws: `BLEError` if scan fails.
-    func scan(serviceUUID: CBUUID, timeout: TimeInterval = 10.0) async throws(BLEError) -> [DiscoveredPrinter] {
+    func scan(
+        serviceUUID: CBUUID? = nil,
+        namePatterns: [String] = [],
+        timeout: TimeInterval = 10.0
+    ) async throws(BLEError) -> [DiscoveredPrinter] {
         // Ensure Bluetooth is ready
         try checkBluetoothState()
 
         // Clear previous scan results
         delegateHandler.clearDiscoveredPeripherals()
 
-        // Start scanning
-        centralManager.scanForPeripherals(withServices: [serviceUUID], options: [
+        // Start scanning - pass nil for services to scan all devices
+        let services = serviceUUID.map { [$0] }
+        bleLogger.debug("Starting BLE scan (serviceUUID: \(serviceUUID?.uuidString ?? "none"), namePatterns: \(namePatterns))")
+
+        centralManager.scanForPeripherals(withServices: services, options: [
             CBCentralManagerScanOptionAllowDuplicatesKey: false
         ])
 
@@ -100,9 +111,25 @@ actor BLEManager {
         centralManager.stopScan()
 
         // Get discovered peripherals
-        let peripherals = delegateHandler.getDiscoveredPeripherals()
+        var peripherals = delegateHandler.getDiscoveredPeripherals()
+        bleLogger.debug("Scan complete. Found \(peripherals.count) device(s) before filtering")
+
+        // Filter by name patterns if provided
+        if !namePatterns.isEmpty {
+            peripherals = peripherals.filter { printer in
+                guard let name = printer.name else {
+                    bleLogger.debug("Skipping device \(printer.id): no name")
+                    return false
+                }
+                let matches = namePatterns.contains { name.hasPrefix($0) }
+                bleLogger.debug("Device '\(name)' (RSSI: \(printer.rssi)): \(matches ? "matches" : "no match")")
+                return matches
+            }
+            bleLogger.debug("After name filtering: \(peripherals.count) device(s)")
+        }
 
         if peripherals.isEmpty {
+            bleLogger.warning("Scan timeout: no matching devices found")
             throw .scanTimeout
         }
 

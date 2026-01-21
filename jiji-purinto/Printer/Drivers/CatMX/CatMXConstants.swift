@@ -17,11 +17,19 @@ enum CatMXConstants {
     /// Service UUID for Cat/MX printers.
     static let serviceUUID = CBUUID(string: "AE30")
 
+    /// Name prefixes for discovering Cat/MX printers during BLE scan.
+    ///
+    /// Cat/MX printers don't advertise their service UUID, so we filter by
+    /// device name instead. Common prefixes: MX05-MX11, GB01-03, Cat variants.
+    static let namePatterns = ["MX", "GB", "Cat"]
+
     /// Characteristic UUID for receiving notifications from printer.
-    static let notifyCharUUID = CBUUID(string: "AE01")
+    /// Note: Despite naming conventions, MX11 uses AE02 for notify.
+    static let notifyCharUUID = CBUUID(string: "AE02")
 
     /// Characteristic UUID for writing commands to printer.
-    static let writeCharUUID = CBUUID(string: "AE02")
+    /// Note: Despite naming conventions, MX11 uses AE01 for write.
+    static let writeCharUUID = CBUUID(string: "AE01")
 
     // MARK: - Protocol Constants
 

@@ -7,6 +7,10 @@
 
 import Foundation
 import CoreBluetooth
+import os
+
+/// Logger for CatMX printer operations.
+private let printerLogger = Logger(subsystem: "com.jiji-purinto", category: "CatMXPrinter")
 
 /// ThermalPrinter implementation for Cat/MX family thermal printers.
 ///
@@ -54,25 +58,37 @@ final class CatMXPrinter: ThermalPrinter {
     func scan(timeout: TimeInterval) async throws(PrinterError) -> [DiscoveredPrinter] {
         do {
             try await bleManager.waitForReady(timeout: 5.0)
-            return try await bleManager.scan(serviceUUID: CatMXConstants.serviceUUID, timeout: timeout)
+            // Scan without service UUID filter since Cat/MX printers don't advertise it.
+            // Filter by name patterns instead.
+            return try await bleManager.scan(
+                serviceUUID: nil,
+                namePatterns: CatMXConstants.namePatterns,
+                timeout: timeout
+            )
         } catch {
             throw error.asPrinterError
         }
     }
 
     func connect(to printer: DiscoveredPrinter) async throws(PrinterError) {
+        printerLogger.info("Connecting to printer: \(printer.displayName) (\(printer.id))")
         do {
             // Connect to peripheral
+            printerLogger.debug("Establishing BLE connection...")
             let connectedPeripheral = try await bleManager.connect(peripheralId: printer.id, timeout: 10.0)
             self.peripheral = connectedPeripheral
+            printerLogger.debug("BLE connection established")
 
             // Discover services
+            printerLogger.debug("Discovering services for UUID: \(CatMXConstants.serviceUUID)")
             _ = try await connectedPeripheral.discoverServices([CatMXConstants.serviceUUID])
 
             // Get service
             let service = try connectedPeripheral.service(for: CatMXConstants.serviceUUID)
+            printerLogger.debug("Found service: \(service.uuid)")
 
             // Discover characteristics
+            printerLogger.debug("Discovering characteristics...")
             _ = try await connectedPeripheral.discoverCharacteristics(
                 [CatMXConstants.writeCharUUID, CatMXConstants.notifyCharUUID],
                 for: service
@@ -81,19 +97,26 @@ final class CatMXPrinter: ThermalPrinter {
             // Get characteristics
             writeCharacteristic = try connectedPeripheral.characteristic(for: CatMXConstants.writeCharUUID)
             notifyCharacteristic = try connectedPeripheral.characteristic(for: CatMXConstants.notifyCharUUID)
+            printerLogger.debug("Found write characteristic: \(CatMXConstants.writeCharUUID)")
+            printerLogger.debug("Found notify characteristic: \(CatMXConstants.notifyCharUUID)")
 
             // Store connection info
             deviceId = printer.id
             deviceName = printer.displayName
 
             // Set default quality and energy
+            printerLogger.debug("Setting default quality and energy...")
             try await setQuality(.normal)
             try await setEnergy(0x60)
 
+            printerLogger.info("Successfully connected to \(printer.displayName)")
+
         } catch let error as BLEError {
+            printerLogger.error("Connection failed with BLEError: \(error.localizedDescription)")
             await disconnect()
             throw error.asPrinterError
         } catch {
+            printerLogger.error("Connection failed with error: \(error.localizedDescription)")
             await disconnect()
             throw .unexpected(error.localizedDescription)
         }
@@ -109,21 +132,40 @@ final class CatMXPrinter: ThermalPrinter {
     }
 
     func print(bitmap: MonoBitmap, onProgress: @escaping (Double) -> Void) async throws(PrinterError) {
+        printerLogger.info("Starting print job: \(bitmap.width)x\(bitmap.height) pixels")
+
         guard let characteristic = writeCharacteristic else {
+            printerLogger.error("Print failed: writeCharacteristic is nil (not connected)")
             throw .connectionLost
         }
 
+        guard let blePeripheral = peripheral else {
+            printerLogger.error("Print failed: peripheral is nil (not connected)")
+            throw .connectionLost
+        }
+
+        printerLogger.debug("Write characteristic: \(characteristic.uuid)")
+        printerLogger.debug("Characteristic properties: \(characteristic.properties.rawValue)")
+        printerLogger.debug("Peripheral state: \(blePeripheral.peripheral.state.rawValue)")
+
         do {
             let totalRows = bitmap.height
+            printerLogger.info("Total rows to print: \(totalRows)")
 
             // Send start print command
             let startCmd = CatMXCommands.startPrint(totalRows: UInt16(totalRows))
+            printerLogger.debug("Sending START_PRINT command (\(startCmd.count) bytes): \(startCmd.map { String(format: "%02X", $0) }.joined(separator: " "))")
             try await sendCommand(startCmd, to: characteristic)
+            printerLogger.debug("START_PRINT command sent successfully")
 
             // Send each row
             for row in 0..<totalRows {
                 let rowData = bitmap.row(at: row)
                 let lineCmd = CatMXCommands.printLine(rowData: Array(rowData))
+
+                if row == 0 {
+                    printerLogger.debug("First row command (\(lineCmd.count) bytes): \(lineCmd.prefix(20).map { String(format: "%02X", $0) }.joined(separator: " "))...")
+                }
 
                 // Send row data in chunks if needed
                 try await sendCommand(lineCmd, to: characteristic)
@@ -132,25 +174,41 @@ final class CatMXPrinter: ThermalPrinter {
                 let progress = Double(row + 1) / Double(totalRows)
                 onProgress(progress)
 
+                // Log every 50 rows
+                if row % 50 == 0 {
+                    printerLogger.debug("Print progress: row \(row)/\(totalRows) (\(Int(progress * 100))%)")
+                }
+
                 // Small delay to prevent overwhelming the printer
                 if row % 10 == 0 {
                     try await Task.sleep(nanoseconds: 5_000_000) // 5ms
                 }
             }
 
+            printerLogger.debug("All \(totalRows) rows sent")
+
             // Send end print command
             let endCmd = CatMXCommands.endPrint()
+            printerLogger.debug("Sending END_PRINT command (\(endCmd.count) bytes): \(endCmd.map { String(format: "%02X", $0) }.joined(separator: " "))")
             try await sendCommand(endCmd, to: characteristic)
+            printerLogger.debug("END_PRINT command sent successfully")
 
             // Feed paper
             let feedCmd = CatMXCommands.feedPaper(lines: 20)
+            printerLogger.debug("Sending FEED_PAPER command (\(feedCmd.count) bytes): \(feedCmd.map { String(format: "%02X", $0) }.joined(separator: " "))")
             try await sendCommand(feedCmd, to: characteristic)
+            printerLogger.debug("FEED_PAPER command sent successfully")
+
+            printerLogger.info("Print job completed successfully")
 
         } catch let error as BLEError {
+            printerLogger.error("Print failed with BLEError: \(error.localizedDescription)")
             throw error.asPrinterError
         } catch let error as PrinterError {
+            printerLogger.error("Print failed with PrinterError: \(error.localizedDescription)")
             throw error
         } catch {
+            printerLogger.error("Print failed with unexpected error: \(error.localizedDescription)")
             throw .unexpected(error.localizedDescription)
         }
     }
@@ -226,6 +284,7 @@ final class CatMXPrinter: ThermalPrinter {
     /// - Throws: `BLEError` if write fails.
     private func sendCommand(_ command: Data, to characteristic: CBCharacteristic) async throws {
         guard let blePeripheral = peripheral else {
+            printerLogger.error("sendCommand failed: peripheral is nil")
             throw BLEError.notConnected
         }
 
@@ -233,19 +292,24 @@ final class CatMXPrinter: ThermalPrinter {
 
         if command.count <= mtu {
             // Single chunk
+            printerLogger.trace("Writing single chunk (\(command.count) bytes) to characteristic")
             try await blePeripheral.write(data: command, to: characteristic, type: .withoutResponse)
         } else {
             // Split into chunks
+            printerLogger.trace("Splitting command (\(command.count) bytes) into chunks of \(mtu) bytes")
             var offset = 0
+            var chunkCount = 0
             while offset < command.count {
                 let chunkSize = min(mtu, command.count - offset)
                 let chunk = command[offset..<(offset + chunkSize)]
                 try await blePeripheral.write(data: Data(chunk), to: characteristic, type: .withoutResponse)
                 offset += chunkSize
+                chunkCount += 1
 
                 // Small delay between chunks
                 try await Task.sleep(nanoseconds: 1_000_000) // 1ms
             }
+            printerLogger.trace("Sent \(chunkCount) chunks")
         }
     }
 }

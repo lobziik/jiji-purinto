@@ -9,6 +9,9 @@ import Foundation
 import os
 @preconcurrency import CoreBluetooth
 
+/// Logger for BLE peripheral operations.
+private let peripheralLogger = Logger(subsystem: "com.jiji-purinto", category: "BLEPeripheral")
+
 /// Wraps a connected CBPeripheral with an async/await API.
 ///
 /// Handles service/characteristic discovery, data writing, and notifications.
@@ -124,20 +127,45 @@ final class BLEPeripheral: NSObject, @unchecked Sendable {
     ///   - type: The write type (withResponse or withoutResponse).
     /// - Throws: `BLEError.writeFailed` if write fails.
     func write(data: Data, to characteristic: CBCharacteristic, type: CBCharacteristicWriteType) async throws(BLEError) {
+        let typeStr = type == .withResponse ? "withResponse" : "withoutResponse"
+        peripheralLogger.trace("Write \(data.count) bytes to \(characteristic.uuid) (\(typeStr))")
+
+        // Check peripheral state
+        let state = peripheral.state
+        if state != .connected {
+            peripheralLogger.error("Write failed: peripheral state is \(state.rawValue) (expected connected=2)")
+            throw .notConnected
+        }
+
+        // Check characteristic properties
+        let props = characteristic.properties
+        if type == .withResponse && !props.contains(.write) {
+            peripheralLogger.error("Write failed: characteristic doesn't support write with response. Properties: \(props.rawValue)")
+        }
+        if type == .withoutResponse && !props.contains(.writeWithoutResponse) {
+            peripheralLogger.error("Write failed: characteristic doesn't support write without response. Properties: \(props.rawValue)")
+        }
+
         if type == .withResponse {
             do {
+                peripheralLogger.trace("Writing with response, waiting for confirmation...")
                 try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
                     writeContinuation.withLock { $0 = continuation }
                     peripheral.writeValue(data, for: characteristic, type: type)
                 }
+                peripheralLogger.trace("Write confirmed by peripheral")
             } catch let error as BLEError {
+                peripheralLogger.error("Write with response failed: \(error.localizedDescription)")
                 throw error
             } catch {
+                peripheralLogger.error("Write with response failed: \(error.localizedDescription)")
                 throw .writeFailed(error)
             }
         } else {
             // Write without response - fire and forget
+            peripheralLogger.trace("Writing without response (fire and forget)")
             peripheral.writeValue(data, for: characteristic, type: type)
+            peripheralLogger.trace("Write dispatched to CoreBluetooth")
         }
     }
 
@@ -191,6 +219,7 @@ final class BLEPeripheral: NSObject, @unchecked Sendable {
 extension BLEPeripheral: CBPeripheralDelegate {
 
     nonisolated func peripheral(_ peripheral: CBPeripheral, didDiscoverServices error: Error?) {
+        peripheralLogger.debug("didDiscoverServices called (error: \(error?.localizedDescription ?? "none"))")
         if let error = error {
             serviceDiscoveryContinuation.withLock { continuation in
                 continuation?.resume(throwing: BLEError.serviceDiscoveryFailed(error))
@@ -200,6 +229,7 @@ extension BLEPeripheral: CBPeripheralDelegate {
         }
 
         let services = peripheral.services ?? []
+        peripheralLogger.debug("Discovered \(services.count) services: \(services.map { $0.uuid.uuidString }.joined(separator: ", "))")
 
         // Cache discovered services
         discoveredServices.withLock { cache in
@@ -215,6 +245,7 @@ extension BLEPeripheral: CBPeripheralDelegate {
     }
 
     nonisolated func peripheral(_ peripheral: CBPeripheral, didDiscoverCharacteristicsFor service: CBService, error: Error?) {
+        peripheralLogger.debug("didDiscoverCharacteristics for \(service.uuid) (error: \(error?.localizedDescription ?? "none"))")
         if let error = error {
             characteristicDiscoveryContinuation.withLock { continuation in
                 continuation?.resume(throwing: BLEError.characteristicDiscoveryFailed(error))
@@ -224,6 +255,9 @@ extension BLEPeripheral: CBPeripheralDelegate {
         }
 
         let characteristics = service.characteristics ?? []
+        for char in characteristics {
+            peripheralLogger.debug("  Characteristic: \(char.uuid) properties: \(char.properties.rawValue)")
+        }
 
         // Cache discovered characteristics
         discoveredCharacteristics.withLock { cache in
@@ -239,10 +273,13 @@ extension BLEPeripheral: CBPeripheralDelegate {
     }
 
     nonisolated func peripheral(_ peripheral: CBPeripheral, didWriteValueFor characteristic: CBCharacteristic, error: Error?) {
+        peripheralLogger.debug("didWriteValue for \(characteristic.uuid) (error: \(error?.localizedDescription ?? "none"))")
         writeContinuation.withLock { continuation in
             if let error = error {
+                peripheralLogger.error("Write callback error: \(error.localizedDescription)")
                 continuation?.resume(throwing: BLEError.writeFailed(error))
             } else {
+                peripheralLogger.trace("Write callback success")
                 continuation?.resume()
             }
             continuation = nil
@@ -250,6 +287,7 @@ extension BLEPeripheral: CBPeripheralDelegate {
     }
 
     nonisolated func peripheral(_ peripheral: CBPeripheral, didUpdateNotificationStateFor characteristic: CBCharacteristic, error: Error?) {
+        peripheralLogger.debug("didUpdateNotificationState for \(characteristic.uuid) (error: \(error?.localizedDescription ?? "none"))")
         notificationContinuation.withLock { continuation in
             if let error = error {
                 continuation?.resume(throwing: BLEError.notificationSetupFailed(error))
@@ -261,7 +299,16 @@ extension BLEPeripheral: CBPeripheralDelegate {
     }
 
     nonisolated func peripheral(_ peripheral: CBPeripheral, didUpdateValueFor characteristic: CBCharacteristic, error: Error?) {
-        guard error == nil, let value = characteristic.value else { return }
+        if let error = error {
+            peripheralLogger.error("didUpdateValue error for \(characteristic.uuid): \(error.localizedDescription)")
+            return
+        }
+        guard let value = characteristic.value else {
+            peripheralLogger.warning("didUpdateValue for \(characteristic.uuid): no value")
+            return
+        }
+
+        peripheralLogger.debug("didUpdateValue for \(characteristic.uuid): \(value.count) bytes - \(value.prefix(20).map { String(format: "%02X", $0) }.joined(separator: " "))")
 
         notificationContinuations.withLock { continuations in
             _ = continuations[characteristic.uuid]?.yield(value)

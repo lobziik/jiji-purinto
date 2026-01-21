@@ -7,6 +7,10 @@
 
 import SwiftUI
 import Combine
+import os
+
+/// Logger for printer coordination.
+private let coordinatorLogger = Logger(subsystem: "com.jiji-purinto", category: "PrinterCoordinator")
 
 /// Coordinates printer connection and print operations.
 ///
@@ -151,6 +155,7 @@ final class PrinterCoordinator: ObservableObject {
 
             let printers = try await printer.scan(timeout: timeout)
             discoveredPrinters = printers
+            isScanning = false  // BLE scan finished, show results
 
             if printers.isEmpty {
                 try send(.scanTimeout)
@@ -243,17 +248,26 @@ final class PrinterCoordinator: ObservableObject {
     /// - Parameter bitmap: The 1-bit bitmap to print.
     /// - Throws: `PrinterError` if printing fails.
     func print(bitmap: MonoBitmap) async throws(PrinterError) {
+        coordinatorLogger.info("Print requested: \(bitmap.width)x\(bitmap.height) bitmap")
+        coordinatorLogger.debug("Current state: \(String(describing: self.state))")
+        coordinatorLogger.debug("canPrint: \(self.state.canPrint)")
+
         guard state.canPrint else {
+            coordinatorLogger.error("Print rejected: state.canPrint is false")
             throw .printerNotReady
         }
 
         guard let printer = printer else {
+            coordinatorLogger.error("Print rejected: printer is nil")
             throw .unexpected("Printer driver not initialized")
         }
+
+        coordinatorLogger.debug("Printer driver available, starting print...")
 
         do {
             try send(.printStart)
             printProgress = 0
+            coordinatorLogger.debug("FSM transitioned to printing state")
 
             try await printer.print(bitmap: bitmap) { [weak self] progress in
                 Task { @MainActor [weak self] in
@@ -262,6 +276,7 @@ final class PrinterCoordinator: ObservableObject {
                 }
             }
 
+            coordinatorLogger.info("Print completed successfully")
             printProgress = 1.0
             try send(.printComplete)
 
@@ -274,9 +289,11 @@ final class PrinterCoordinator: ObservableObject {
             }
 
         } catch let error as PrinterError {
+            coordinatorLogger.error("Print failed with PrinterError: \(error.localizedDescription)")
             try? send(.printFailed(error))
             throw error
         } catch {
+            coordinatorLogger.error("Print failed with unexpected error: \(error.localizedDescription)")
             let printerError = PrinterError.unexpected(error.localizedDescription)
             try? send(.printFailed(printerError))
             throw printerError
