@@ -29,6 +29,9 @@ final class CatMXPrinter: ThermalPrinter {
     /// The notify characteristic for receiving responses.
     private var notifyCharacteristic: CBCharacteristic?
 
+    /// Active notification stream from the printer.
+    private var notificationStream: AsyncStream<Data>?
+
     /// Device ID of the connected printer.
     private(set) var deviceId: UUID?
 
@@ -134,6 +137,13 @@ final class CatMXPrinter: ThermalPrinter {
             try await setEnergy(0x60)
             try await applyEnergy()
 
+            // Subscribe to printer notifications for flow control
+            if let notifyChar = notifyCharacteristic {
+                printerLogger.debug("Subscribing to notifications on \(CatMXConstants.notifyCharUUID)...")
+                notificationStream = try await connectedPeripheral.notifications(for: notifyChar)
+                printerLogger.debug("Notification subscription established")
+            }
+
             printerLogger.info("Successfully connected to \(printer.displayName)")
 
         } catch let error as BLEError {
@@ -148,6 +158,12 @@ final class CatMXPrinter: ThermalPrinter {
     }
 
     func disconnect() async {
+        // Disable notifications
+        if let notifyChar = notifyCharacteristic, let blePeripheral = peripheral {
+            blePeripheral.disableNotifications(for: notifyChar)
+        }
+        notificationStream = nil
+
         await bleManager.disconnect()
         peripheral = nil
         writeCharacteristic = nil
@@ -177,30 +193,30 @@ final class CatMXPrinter: ThermalPrinter {
             let totalRows = bitmap.height
             printerLogger.info("Total rows to print: \(totalRows)")
 
-            // Send each row (no startPrint command needed for Cat/MX protocol)
+            // Send each row with per-row delay to prevent buffer overflow
             for row in 0..<totalRows {
                 let rowData = bitmap.row(at: row)
                 let lineCmd = CatMXCommands.printLine(rowData: Array(rowData))
 
                 if row == 0 {
-                    printerLogger.debug("First row command (\(lineCmd.count) bytes): \(lineCmd.prefix(20).map { String(format: "%02X", $0) }.joined(separator: " "))...")
+                    printerLogger.debug("First row command (\(lineCmd.count) bytes)")
                 }
 
-                // Send row data in chunks if needed
                 try await sendCommand(lineCmd, to: characteristic)
 
-                // Report progress after each row
-                let progress = Double(row + 1) / Double(totalRows)
-                onProgress(progress)
+                // Per-row delay to prevent printer buffer overflow
+                // 2ms per row is conservative; TypeScript reference uses similar timing
+                try? await Task.sleep(nanoseconds: CatMXConstants.printRowDelayNs)
+
+                // Report progress every 10 rows
+                if row % 10 == 0 || row == totalRows - 1 {
+                    let progress = Double(row + 1) / Double(totalRows)
+                    onProgress(progress)
+                }
 
                 // Log every 50 rows
                 if row % 50 == 0 {
-                    printerLogger.debug("Print progress: row \(row)/\(totalRows) (\(Int(progress * 100))%)")
-                }
-
-                // Small delay to prevent overwhelming the printer
-                if row % 10 == 0 {
-                    try await Task.sleep(nanoseconds: 5_000_000) // 5ms
+                    printerLogger.debug("Print progress: row \(row)/\(totalRows)")
                 }
             }
 

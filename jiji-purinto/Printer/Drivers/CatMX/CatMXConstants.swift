@@ -45,6 +45,12 @@ enum CatMXConstants {
     /// Default paper feed after print (3mm = 24 rows at 203 DPI).
     static let defaultFeedLines: UInt16 = 24
 
+    /// Delay between print rows in nanoseconds.
+    ///
+    /// 3.5ms provides reliable printing; adjust based on printer model.
+    /// If too slow, reduce to 2ms (2_000_000).
+    static let printRowDelayNs: UInt64 = 3_500_000
+
     // MARK: - Command Identifiers
 
     /// Command IDs for Cat/MX protocol.

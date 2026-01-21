@@ -54,6 +54,9 @@ enum PrinterError: Error, Sendable, Equatable {
     /// Printer battery is too low.
     case lowBattery
 
+    /// Operation timed out waiting for printer response.
+    case timeout
+
     /// Unexpected error.
     case unexpected(String)
 }
@@ -89,6 +92,8 @@ extension PrinterError: LocalizedError {
             return "Printer is overheated. Please wait for it to cool down"
         case .lowBattery:
             return "Printer battery is too low. Please charge the printer"
+        case .timeout:
+            return "Printer did not respond in time"
         case .unexpected(let message):
             return "Unexpected printer error: \(message)"
         }
