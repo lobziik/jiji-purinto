@@ -136,6 +136,66 @@ actor BLEManager {
         return peripherals
     }
 
+    /// Scans for peripherals and yields them as they are discovered.
+    ///
+    /// This method provides reactive scanning where each discovered printer
+    /// is yielded immediately, rather than waiting for the full timeout.
+    ///
+    /// - Parameters:
+    ///   - serviceUUID: Optional service UUID to scan for. If nil, scans for all devices.
+    ///   - namePatterns: Optional array of name prefixes to filter by. Empty means no filtering.
+    ///   - timeout: Scan timeout in seconds.
+    /// - Returns: An async stream of discovered printers.
+    func scanStream(
+        serviceUUID: CBUUID? = nil,
+        namePatterns: [String] = [],
+        timeout: TimeInterval = 10.0
+    ) -> AsyncThrowingStream<DiscoveredPrinter, Error> {
+        AsyncThrowingStream { continuation in
+            Task {
+                do {
+                    // Ensure Bluetooth is ready
+                    try checkBluetoothState()
+
+                    // Clear previous scan results
+                    delegateHandler.clearDiscoveredPeripherals()
+
+                    // Set up discovery callback
+                    delegateHandler.setOnDiscovery { [namePatterns] printer in
+                        // Filter by name patterns if provided
+                        if !namePatterns.isEmpty {
+                            guard let name = printer.name else { return }
+                            guard namePatterns.contains(where: { name.hasPrefix($0) }) else { return }
+                        }
+                        continuation.yield(printer)
+                    }
+
+                    // Start scanning
+                    let services = serviceUUID.map { [$0] }
+                    bleLogger.debug("Starting BLE stream scan (serviceUUID: \(serviceUUID?.uuidString ?? "none"), namePatterns: \(namePatterns))")
+
+                    centralManager.scanForPeripherals(withServices: services, options: [
+                        CBCentralManagerScanOptionAllowDuplicatesKey: false
+                    ])
+
+                    // Wait for timeout
+                    try await Task.sleep(nanoseconds: UInt64(timeout * 1_000_000_000))
+
+                    // Stop scanning
+                    centralManager.stopScan()
+                    delegateHandler.clearOnDiscovery()
+
+                    bleLogger.debug("Stream scan completed after \(timeout)s timeout")
+                    continuation.finish()
+                } catch {
+                    centralManager.stopScan()
+                    delegateHandler.clearOnDiscovery()
+                    continuation.finish(throwing: error)
+                }
+            }
+        }
+    }
+
     /// Connects to a peripheral.
     ///
     /// - Parameters:
@@ -247,6 +307,8 @@ private final class DelegateHandler: NSObject, CBCentralManagerDelegate, @unchec
         var connectingPeripheral: CBPeripheral?
         var discoveredPeripherals: [UUID: (peripheral: CBPeripheral, rssi: Int)] = [:]
         var onDisconnect: ((UUID, Error?) -> Void)?
+        /// Callback invoked when a new printer is discovered during streaming scan.
+        var onDiscovery: ((DiscoveredPrinter) -> Void)?
     }
 
     /// Waits for Bluetooth to be powered on.
@@ -302,6 +364,22 @@ private final class DelegateHandler: NSObject, CBCentralManagerDelegate, @unchec
         }
     }
 
+    /// Sets the discovery callback for streaming scan.
+    ///
+    /// - Parameter callback: Called when a new printer is discovered.
+    func setOnDiscovery(_ callback: @escaping (DiscoveredPrinter) -> Void) {
+        lock.withLock { state in
+            state.onDiscovery = callback
+        }
+    }
+
+    /// Clears the discovery callback.
+    func clearOnDiscovery() {
+        lock.withLock { state in
+            state.onDiscovery = nil
+        }
+    }
+
     // MARK: - CBCentralManagerDelegate
 
     func centralManagerDidUpdateState(_ central: CBCentralManager) {
@@ -327,7 +405,18 @@ private final class DelegateHandler: NSObject, CBCentralManagerDelegate, @unchec
 
     func centralManager(_ central: CBCentralManager, didDiscover peripheral: CBPeripheral, advertisementData: [String: Any], rssi RSSI: NSNumber) {
         lock.withLock { state in
+            let isNewDiscovery = state.discoveredPeripherals[peripheral.identifier] == nil
             state.discoveredPeripherals[peripheral.identifier] = (peripheral, RSSI.intValue)
+
+            // Notify callback for new discoveries during streaming scan
+            if isNewDiscovery, let callback = state.onDiscovery {
+                let printer = DiscoveredPrinter(
+                    id: peripheral.identifier,
+                    name: peripheral.name,
+                    rssi: RSSI.intValue
+                )
+                callback(printer)
+            }
         }
     }
 

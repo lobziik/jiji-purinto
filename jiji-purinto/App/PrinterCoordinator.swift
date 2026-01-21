@@ -48,6 +48,28 @@ final class PrinterCoordinator: ObservableObject {
     /// Device name to restore after transitioning from busy to ready.
     private var connectedDeviceName: String?
 
+    // MARK: - Auto-Reconnection
+
+    /// Configuration for auto-reconnection behavior.
+    private enum ReconnectConfig {
+        /// Maximum number of reconnection attempts before giving up.
+        static let maxAttempts = 3
+        /// Delay between reconnection attempts in seconds.
+        static let retryDelay: TimeInterval = 2.0
+    }
+
+    /// Device ID of the last connected printer for reconnection.
+    private var lastConnectedDeviceId: UUID?
+
+    /// Device name of the last connected printer for reconnection.
+    private var lastConnectedDeviceName: String?
+
+    /// Current number of reconnection attempts.
+    private var reconnectAttempts = 0
+
+    /// Whether auto-reconnection is currently in progress.
+    @Published private(set) var isReconnecting: Bool = false
+
     // MARK: - Initialization
 
     init() {
@@ -71,10 +93,23 @@ final class PrinterCoordinator: ObservableObject {
     private func handleConnectionLost() {
         guard state.isConnected else { return }
 
+        coordinatorLogger.warning("Printer connection lost unexpectedly from state: \(String(describing: self.state))")
+
+        // Capture device info before transitioning to error state
+        let deviceId = lastConnectedDeviceId
+        let deviceName = lastConnectedDeviceName
+
         do {
             try send(.connectionLost)
         } catch {
-            // Already in an incompatible state, ignore
+            coordinatorLogger.error("Failed to send connectionLost event: \(error.localizedDescription)")
+        }
+
+        // Start background reconnection if we have device info
+        if let deviceId = deviceId, let deviceName = deviceName {
+            Task {
+                await attemptAutoReconnect(deviceId: deviceId, deviceName: deviceName)
+            }
         }
     }
 
@@ -85,7 +120,9 @@ final class PrinterCoordinator: ObservableObject {
     /// - Parameter event: The event to process.
     /// - Throws: `FSMError` if the transition is invalid.
     func send(_ event: PrinterEvent) throws {
+        let fromState = state
         let newState = try fsm.transition(from: state, event: event)
+        coordinatorLogger.info("PrinterFSM: \(String(describing: fromState)) --[\(String(describing: event))]--> \(String(describing: newState))")
 
         // Handle special state transitions
         switch newState {
@@ -139,39 +176,91 @@ final class PrinterCoordinator: ObservableObject {
         state.deviceName
     }
 
-    /// Starts scanning for printers.
+    /// Starts scanning for printers with reactive streaming.
+    ///
+    /// Discovered printers appear one-by-one as they are found,
+    /// rather than waiting for the full timeout.
     ///
     /// - Parameter timeout: Scan timeout in seconds.
     func startScan(timeout: TimeInterval = 10.0) async {
-        guard state.canStartScan else { return }
+        // Determine which event to use based on current state
+        let event: PrinterEvent
+        if case .scanning = state {
+            // Already scanning, use restartScan for self-loop transition
+            event = .restartScan
+            coordinatorLogger.debug("Restarting scan from scanning state")
+        } else if case .error = state {
+            // Reset from error state first, then start scan
+            coordinatorLogger.debug("Resetting from error state before scanning")
+            do {
+                try send(.reset)
+            } catch {
+                coordinatorLogger.error("Failed to reset from error state: \(error.localizedDescription)")
+                return
+            }
+            event = .startScan
+        } else {
+            guard state.canStartScan else {
+                coordinatorLogger.warning("Cannot start scan from state: \(String(describing: self.state))")
+                return
+            }
+            event = .startScan
+        }
 
         do {
-            try send(.startScan)
+            try send(event)
+            discoveredPrinters = []  // Clear previous results for fresh scan
 
             guard let printer = printer else {
                 try send(.scanTimeout)
                 return
             }
 
-            let printers = try await printer.scan(timeout: timeout)
-            discoveredPrinters = printers
-            isScanning = false  // BLE scan finished, show results
+            // Use streaming scan for reactive updates
+            coordinatorLogger.debug("Starting streaming scan with \(timeout)s timeout")
+            for try await discovered in printer.scanStream(timeout: timeout) {
+                // Only add if not already in the list
+                if !discoveredPrinters.contains(where: { $0.id == discovered.id }) {
+                    discoveredPrinters.append(discovered)
+                    // Sort by signal strength (higher RSSI = better signal)
+                    discoveredPrinters.sort { $0.rssi > $1.rssi }
+                    coordinatorLogger.debug("Discovered: \(discovered.displayName) (RSSI: \(discovered.rssi))")
+                }
+            }
 
-            if printers.isEmpty {
+            isScanning = false  // BLE scan finished, show results
+            coordinatorLogger.debug("Scan completed. Found \(self.discoveredPrinters.count) printer(s)")
+
+            if discoveredPrinters.isEmpty {
                 try send(.scanTimeout)
             }
             // Stay in scanning state until user connects or cancels
 
         } catch let error as PrinterError {
-            try? send(.connectFailed(error))
+            isScanning = false
+            do {
+                try send(.connectFailed(error))
+            } catch {
+                coordinatorLogger.error("Failed to send connectFailed event: \(error.localizedDescription)")
+            }
         } catch {
-            try? send(.connectFailed(.unexpected(error.localizedDescription)))
+            isScanning = false
+            do {
+                try send(.connectFailed(.unexpected(error.localizedDescription)))
+            } catch {
+                coordinatorLogger.error("Failed to send connectFailed event: \(error.localizedDescription)")
+            }
         }
     }
 
     /// Cancels an ongoing scan.
     func cancelScan() {
-        try? send(.cancelScan)
+        coordinatorLogger.debug("Cancelling scan from state: \(String(describing: self.state))")
+        do {
+            try send(.cancelScan)
+        } catch {
+            coordinatorLogger.warning("Failed to cancel scan: \(error.localizedDescription)")
+        }
         discoveredPrinters = []
     }
 
@@ -189,8 +278,11 @@ final class PrinterCoordinator: ObservableObject {
 
             try await printer.connect(to: discoveredPrinter)
 
-            // Save for auto-reconnect
+            // Save for auto-reconnect (both storage and local state)
             storage.saveLastPrinter(id: discoveredPrinter.id, name: discoveredPrinter.displayName)
+            lastConnectedDeviceId = discoveredPrinter.id
+            lastConnectedDeviceName = discoveredPrinter.displayName
+            reconnectAttempts = 0  // Reset attempts on successful connection
 
             try send(.connectSuccess(
                 deviceId: discoveredPrinter.id,
@@ -205,11 +297,23 @@ final class PrinterCoordinator: ObservableObject {
     }
 
     /// Disconnects from the current printer.
+    ///
+    /// An intentional disconnect cancels any auto-reconnection attempts
+    /// and clears the saved device info.
     func disconnect() async {
         guard state.isConnected else { return }
 
+        coordinatorLogger.debug("Disconnecting (intentional) from state: \(String(describing: self.state))")
+
+        // Cancel auto-reconnect since this is an intentional disconnect
+        cancelAutoReconnect()
+
         await printer?.disconnect()
-        try? send(.disconnect)
+        do {
+            try send(.disconnect)
+        } catch {
+            coordinatorLogger.warning("Failed to send disconnect event: \(error.localizedDescription)")
+        }
     }
 
     /// Attempts to reconnect to the last connected printer.
@@ -218,8 +322,11 @@ final class PrinterCoordinator: ObservableObject {
     func reconnectToLast() async {
         guard let lastId = storage.lastPrinterId,
               let lastName = storage.lastPrinterName else {
+            coordinatorLogger.debug("No last printer stored, skipping reconnect")
             return
         }
+
+        coordinatorLogger.info("Attempting to reconnect to last printer: \(lastName) (\(lastId))")
 
         do {
             try send(.reconnect(deviceId: lastId))
@@ -235,11 +342,17 @@ final class PrinterCoordinator: ObservableObject {
             try await printer.connect(to: savedPrinter)
 
             try send(.connectSuccess(deviceId: lastId, deviceName: lastName))
+            coordinatorLogger.info("Successfully reconnected to \(lastName)")
 
         } catch {
+            coordinatorLogger.warning("Failed to reconnect to last printer: \(error.localizedDescription)")
             // Clear saved printer on failed reconnect
             storage.clearLastPrinter()
-            try? send(.connectFailed(.connectionFailed(reason: "Could not reconnect to last printer")))
+            do {
+                try send(.connectFailed(.connectionFailed(reason: "Could not reconnect to last printer")))
+            } catch {
+                coordinatorLogger.error("Failed to send connectFailed event: \(error.localizedDescription)")
+            }
         }
     }
 
@@ -302,8 +415,115 @@ final class PrinterCoordinator: ObservableObject {
 
     /// Resets from error state.
     func reset() {
-        try? send(.reset)
+        coordinatorLogger.debug("Resetting from state: \(String(describing: self.state))")
+        do {
+            try send(.reset)
+        } catch {
+            coordinatorLogger.warning("Failed to reset: \(error.localizedDescription)")
+        }
         printProgress = 0
+    }
+
+    // MARK: - Auto-Reconnection
+
+    /// Attempts to automatically reconnect to a printer after connection loss.
+    ///
+    /// This method runs in the background and attempts to reconnect up to
+    /// `ReconnectConfig.maxAttempts` times with delays between attempts.
+    ///
+    /// - Parameters:
+    ///   - deviceId: The UUID of the device to reconnect to.
+    ///   - deviceName: The name of the device (for logging and status display).
+    private func attemptAutoReconnect(deviceId: UUID, deviceName: String) async {
+        guard !isReconnecting else {
+            coordinatorLogger.debug("Already reconnecting, skipping duplicate attempt")
+            return
+        }
+
+        isReconnecting = true
+        reconnectAttempts = 0
+
+        coordinatorLogger.info("Starting auto-reconnection to \(deviceName) (\(deviceId))")
+
+        while reconnectAttempts < ReconnectConfig.maxAttempts {
+            reconnectAttempts += 1
+            coordinatorLogger.info("Reconnection attempt \(self.reconnectAttempts)/\(ReconnectConfig.maxAttempts)")
+
+            // Update status to show reconnection progress
+            status = .reconnecting(attempt: reconnectAttempts, maxAttempts: ReconnectConfig.maxAttempts)
+
+            // Reset from error state to allow reconnection
+            do {
+                if case .error = state {
+                    try send(.reset)
+                }
+
+                try send(.reconnect(deviceId: deviceId))
+
+                // Create a discovered printer from stored info
+                let savedPrinter = DiscoveredPrinter(id: deviceId, name: deviceName, rssi: 0)
+
+                guard let printer = printer else {
+                    coordinatorLogger.error("Printer driver not initialized during reconnection")
+                    throw PrinterError.unexpected("Printer driver not initialized")
+                }
+
+                try await printer.connect(to: savedPrinter)
+
+                // Success - update state
+                try send(.connectSuccess(deviceId: deviceId, deviceName: deviceName))
+                coordinatorLogger.info("Auto-reconnection successful on attempt \(self.reconnectAttempts)")
+
+                isReconnecting = false
+                reconnectAttempts = 0
+                return
+
+            } catch {
+                coordinatorLogger.warning("Reconnection attempt \(self.reconnectAttempts) failed: \(error.localizedDescription)")
+
+                // Transition back to error state for next attempt
+                if case .connecting = state {
+                    do {
+                        try send(.connectFailed(.connectionFailed(reason: "Reconnection attempt \(reconnectAttempts) failed")))
+                    } catch {
+                        coordinatorLogger.error("Failed to send connectFailed: \(error.localizedDescription)")
+                    }
+                }
+
+                // Wait before next attempt (unless this was the last attempt)
+                if reconnectAttempts < ReconnectConfig.maxAttempts {
+                    coordinatorLogger.debug("Waiting \(ReconnectConfig.retryDelay)s before next attempt")
+                    try? await Task.sleep(nanoseconds: UInt64(ReconnectConfig.retryDelay * 1_000_000_000))
+                }
+            }
+        }
+
+        // All attempts failed
+        coordinatorLogger.warning("Auto-reconnection failed after \(ReconnectConfig.maxAttempts) attempts")
+        isReconnecting = false
+        reconnectAttempts = 0
+
+        // Ensure we're in disconnected state (not error)
+        if case .error = state {
+            do {
+                try send(.reset)
+            } catch {
+                coordinatorLogger.error("Failed to reset after reconnection failure: \(error.localizedDescription)")
+            }
+        }
+    }
+
+    /// Cancels any ongoing auto-reconnection attempts.
+    ///
+    /// Called when user explicitly disconnects to prevent auto-reconnect.
+    private func cancelAutoReconnect() {
+        if isReconnecting {
+            coordinatorLogger.debug("Cancelling auto-reconnection")
+        }
+        isReconnecting = false
+        reconnectAttempts = 0
+        lastConnectedDeviceId = nil
+        lastConnectedDeviceName = nil
     }
 }
 

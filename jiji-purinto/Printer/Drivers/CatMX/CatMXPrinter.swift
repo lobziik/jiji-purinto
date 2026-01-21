@@ -70,6 +70,30 @@ final class CatMXPrinter: ThermalPrinter {
         }
     }
 
+    func scanStream(timeout: TimeInterval) -> AsyncThrowingStream<DiscoveredPrinter, Error> {
+        AsyncThrowingStream { continuation in
+            Task {
+                do {
+                    try await bleManager.waitForReady(timeout: 5.0)
+                    // Scan without service UUID filter since Cat/MX printers don't advertise it.
+                    // Filter by name patterns instead.
+                    for try await printer in await bleManager.scanStream(
+                        serviceUUID: nil,
+                        namePatterns: CatMXConstants.namePatterns,
+                        timeout: timeout
+                    ) {
+                        continuation.yield(printer)
+                    }
+                    continuation.finish()
+                } catch let bleError as BLEError {
+                    continuation.finish(throwing: bleError.asPrinterError)
+                } catch {
+                    continuation.finish(throwing: PrinterError.unexpected(error.localizedDescription))
+                }
+            }
+        }
+    }
+
     func connect(to printer: DiscoveredPrinter) async throws(PrinterError) {
         printerLogger.info("Connecting to printer: \(printer.displayName) (\(printer.id))")
         do {

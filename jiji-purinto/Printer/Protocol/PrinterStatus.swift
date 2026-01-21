@@ -21,6 +21,9 @@ enum PrinterStatus: Sendable, Equatable {
     /// Connecting to a printer.
     case connecting
 
+    /// Attempting to reconnect after connection loss.
+    case reconnecting(attempt: Int, maxAttempts: Int)
+
     /// Connected and ready to print.
     case ready(printerName: String)
 
@@ -54,6 +57,14 @@ enum PrinterStatus: Sendable, Equatable {
         return false
     }
 
+    /// Whether the printer is attempting to reconnect.
+    var isReconnecting: Bool {
+        if case .reconnecting = self {
+            return true
+        }
+        return false
+    }
+
     /// Short description for UI display.
     var description: String {
         switch self {
@@ -63,6 +74,8 @@ enum PrinterStatus: Sendable, Equatable {
             return "Scanning..."
         case .connecting:
             return "Connecting..."
+        case .reconnecting(let attempt, let maxAttempts):
+            return "Reconnecting (\(attempt)/\(maxAttempts))..."
         case .ready(let printerName):
             return printerName
         case .printing(let progress):

@@ -7,6 +7,10 @@
 
 import SwiftUI
 import Combine
+import os
+
+/// Logger for app coordination.
+private let appLogger = Logger(subsystem: "com.jiji-purinto", category: "AppCoordinator")
 
 /// Coordinates application state and connects FSM to SwiftUI.
 ///
@@ -81,12 +85,14 @@ final class AppCoordinator: ObservableObject {
     /// - Parameter event: The event to process.
     /// - Throws: `FSMError` if the transition is invalid or a guard fails.
     func send(_ event: AppEvent) throws {
+        let fromState = state
         let context = FSMContext(printerReady: printerReady)
         let newState = try fsm.transition(from: state, event: event, context: context)
+        appLogger.info("AppFSM: \(String(describing: fromState)) --[\(String(describing: event))]--> \(String(describing: newState))")
         state = newState
     }
 
-    /// Attempts to send an event, ignoring any errors.
+    /// Attempts to send an event, logging failures explicitly.
     ///
     /// - Parameter event: The event to process.
     /// - Returns: `true` if the transition succeeded, `false` otherwise.
@@ -99,6 +105,7 @@ final class AppCoordinator: ObservableObject {
             try send(event)
             return true
         } catch {
+            appLogger.warning("AppFSM transition failed: \(String(describing: self.state)) --[\(String(describing: event))]--> REJECTED: \(error.localizedDescription)")
             return false
         }
     }
@@ -235,6 +242,73 @@ final class AppCoordinator: ObservableObject {
         }
 
         return try await imageProcessor.process(image: image, settings: imageSettings)
+    }
+
+    // MARK: - Debug: Test Patterns
+
+    /// Prints a test pattern for printer diagnostics.
+    ///
+    /// Only available when `DebugConfig.enableDebugMenu` is true.
+    ///
+    /// - Parameter pattern: The test pattern type to print.
+    /// - Throws: `AppError` if printer not ready or print fails.
+    func printTestPattern(_ pattern: TestPatternType) async throws(AppError) {
+        guard printerReady else {
+            throw .printerNotReady
+        }
+
+        let (data, height) = patternData(for: pattern)
+
+        do {
+            let bitmap = try PrinterTestPatterns.toMonoBitmap(data: data, height: height)
+            try send(.print)
+            try await printerCoordinator.print(bitmap: bitmap)
+            try send(.printSuccess)
+        } catch let error as PrinterError {
+            try? send(.printFailed(.printingFailed(reason: error.localizedDescription)))
+            throw .printingFailed(reason: error.localizedDescription)
+        } catch let error as MonoBitmapError {
+            throw .processingFailed(reason: error.localizedDescription)
+        } catch let error as FSMError {
+            throw .unexpected("State transition failed: \(error.localizedDescription)")
+        } catch {
+            throw .unexpected(error.localizedDescription)
+        }
+    }
+
+    /// Returns the raw pattern data and height for a test pattern type.
+    ///
+    /// - Parameter pattern: The test pattern type.
+    /// - Returns: Tuple of raw bitmap data and pattern height in rows.
+    private func patternData(for pattern: TestPatternType) -> (Data, Int) {
+        switch pattern {
+        case .diagnosticAll:
+            return PrinterTestPatterns.diagnosticPattern()
+        case .verticalStripes:
+            let data = PrinterTestPatterns.verticalStripes(height: 100)
+            return (data, 100)
+        case .horizontalStripes:
+            let data = PrinterTestPatterns.horizontalStripes(height: 100)
+            return (data, 100)
+        case .checkerboard:
+            let data = PrinterTestPatterns.checkerboard(height: 128)
+            return (data, 128)
+        case .leftBorder:
+            let data = PrinterTestPatterns.leftBorder(height: 100)
+            return (data, 100)
+        case .rightBorder:
+            let data = PrinterTestPatterns.rightBorder(height: 100)
+            return (data, 100)
+        case .arrow:
+            let data = PrinterTestPatterns.arrow()
+            return (data, 48)
+        case .fullWidthLines:
+            let data = PrinterTestPatterns.fullWidthLines()
+            return (data, 75)  // 5 * (5 black + 10 white)
+        case .singlePixelTest:
+            let data = PrinterTestPatterns.singlePixelTest(height: 50)
+            return (data, 50)
+        }
     }
 
     /// Prints the current image.

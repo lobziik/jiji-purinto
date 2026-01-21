@@ -17,6 +17,9 @@ enum PrinterEvent: Sendable, Equatable {
     /// Start scanning for available printers.
     case startScan
 
+    /// Restart scanning while already in scanning state (e.g., "Scan Again" button).
+    case restartScan
+
     /// Cancel an ongoing scan.
     case cancelScan
 
@@ -65,6 +68,8 @@ extension PrinterEvent: CustomStringConvertible {
         switch self {
         case .startScan:
             return "startScan"
+        case .restartScan:
+            return "restartScan"
         case .cancelScan:
             return "cancelScan"
         case .scanTimeout:

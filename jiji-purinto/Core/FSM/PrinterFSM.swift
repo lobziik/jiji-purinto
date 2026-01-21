@@ -19,6 +19,7 @@ import Foundation
 /// |------|-------|-----|
 /// | disconnected | startScan | scanning |
 /// | disconnected | reconnect | connecting |
+/// | scanning | restartScan | scanning |
 /// | scanning | connect | connecting |
 /// | scanning | cancelScan | disconnected |
 /// | scanning | scanTimeout | disconnected |
@@ -57,6 +58,9 @@ struct PrinterFSM: Sendable {
             return .connecting(deviceId: deviceId)
 
         // MARK: - From scanning
+
+        case (.scanning, .restartScan):
+            return .scanning
 
         case (.scanning, .connect(let printer)):
             return .connecting(deviceId: printer.id)

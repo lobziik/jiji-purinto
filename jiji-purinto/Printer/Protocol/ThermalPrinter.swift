@@ -28,6 +28,15 @@ protocol ThermalPrinter: AnyObject {
     /// - Throws: `PrinterError` if scan fails.
     func scan(timeout: TimeInterval) async throws(PrinterError) -> [DiscoveredPrinter]
 
+    /// Scans for available printers with reactive streaming.
+    ///
+    /// Yields discovered printers immediately as they are found,
+    /// rather than waiting for the full timeout.
+    ///
+    /// - Parameter timeout: Maximum time to scan in seconds.
+    /// - Returns: An async throwing stream of discovered printers.
+    func scanStream(timeout: TimeInterval) -> AsyncThrowingStream<DiscoveredPrinter, Error>
+
     /// Connects to a discovered printer.
     ///
     /// - Parameter printer: The printer to connect to.

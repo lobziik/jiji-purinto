@@ -58,6 +58,8 @@ struct PrinterStatusView: View {
             return printerName
         case .printing(let progress):
             return "\(Int(progress * 100))%"
+        case .reconnecting(let attempt, let maxAttempts):
+            return "Reconnecting (\(attempt)/\(maxAttempts))"
         case .error:
             return "Error"
         default:
@@ -72,6 +74,9 @@ struct PrinterStatusView: View {
             showingScanSheet = true
         case .ready:
             // Could show printer info or disconnect option
+            showingScanSheet = true
+        case .reconnecting:
+            // Allow user to open scan sheet during reconnection to cancel or try manually
             showingScanSheet = true
         default:
             break
@@ -111,6 +116,8 @@ struct StatusDot: View {
             return .red
         case .scanning, .connecting:
             return .yellow
+        case .reconnecting:
+            return .orange
         case .ready:
             return .green
         case .printing:
@@ -123,7 +130,7 @@ struct StatusDot: View {
     /// Whether the dot should pulse.
     private var shouldPulse: Bool {
         switch status {
-        case .scanning, .connecting, .printing:
+        case .scanning, .connecting, .printing, .reconnecting:
             return true
         default:
             return false
@@ -284,7 +291,7 @@ struct PrinterScanSheet: View {
     /// Whether we can connect to a printer.
     private var canConnect: Bool {
         switch printerCoordinator.status {
-        case .disconnected, .scanning:
+        case .disconnected, .scanning, .reconnecting:
             return true
         default:
             return false
