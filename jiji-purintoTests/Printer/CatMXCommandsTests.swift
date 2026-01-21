@@ -79,15 +79,24 @@ struct CatMXCommandsTests {
         #expect(bytes[7] == 0x01) // High byte of 300
     }
 
-    @Test("startPrint builds correct command with row count")
-    func startPrint_buildsCorrectCommand() {
-        let rows: UInt16 = 500 // 0x01F4
-        let cmd = CatMXCommands.startPrint(totalRows: rows)
+    @Test("setSpeed builds correct command")
+    func setSpeed_buildsCorrectCommand() {
+        let speed: UInt8 = 32
+        let cmd = CatMXCommands.setSpeed(speed)
         let bytes = Array(cmd)
 
-        #expect(bytes[2] == CatMXConstants.Command.startPrint.rawValue)
-        #expect(bytes[6] == 0xF4) // Low byte of 500
-        #expect(bytes[7] == 0x01) // High byte of 500
+        #expect(bytes[2] == CatMXConstants.Command.setSpeed.rawValue)
+        #expect(bytes[6] == speed)
+    }
+
+    @Test("applyEnergy builds correct command")
+    func applyEnergy_buildsCorrectCommand() {
+        let cmd = CatMXCommands.applyEnergy()
+        let bytes = Array(cmd)
+
+        #expect(bytes[2] == CatMXConstants.Command.applyEnergy.rawValue)
+        // applyEnergy sends 0x01 as data
+        #expect(bytes[6] == 0x01)
     }
 
     @Test("printLine includes row data")
@@ -108,15 +117,15 @@ struct CatMXCommandsTests {
         }
     }
 
-    @Test("endPrint builds correct command")
-    func endPrint_buildsCorrectCommand() {
-        let cmd = CatMXCommands.endPrint()
+    @Test("retract builds correct command")
+    func retract_buildsCorrectCommand() {
+        let lines: UInt16 = 10
+        let cmd = CatMXCommands.retract(lines: lines)
         let bytes = Array(cmd)
 
-        #expect(bytes[2] == CatMXConstants.Command.endPrint.rawValue)
-        // No data, so length should be 0
-        let length = Int(bytes[4]) | (Int(bytes[5]) << 8)
-        #expect(length == 0)
+        #expect(bytes[2] == CatMXConstants.Command.retract.rawValue)
+        #expect(bytes[6] == 0x0A) // Low byte of 10
+        #expect(bytes[7] == 0x00) // High byte of 10
     }
 
     @Test("getStatus builds correct command")
@@ -129,19 +138,55 @@ struct CatMXCommandsTests {
 
     // MARK: - CRC Tests
 
-    @Test("CRC is calculated correctly")
-    func crc_isCalculatedCorrectly() {
+    @Test("CRC8 is calculated correctly for empty payload")
+    func crc8_emptyPayload_returnsZero() {
+        // For empty payload, CRC8 should be 0x00
         let cmd = CatMXCommands.getStatus()
         let bytes = Array(cmd)
 
-        // CRC is XOR of bytes from cmd (index 2) to end of data (before CRC and 0xFF)
-        var expectedCRC: UInt8 = 0
-        for i in 2..<(bytes.count - 2) {
-            expectedCRC ^= bytes[i]
-        }
+        // CRC is calculated only on payload data, which is empty for getStatus
+        // CRC8 of empty data is 0x00
+        let actualCRC = bytes[bytes.count - 2]
+        #expect(actualCRC == 0x00)
+    }
 
+    @Test("CRC8 matches TypeScript reference implementation")
+    func crc8_matchesTypeScriptReference() {
+        // Test with known values - verify CRC8 polynomial 0x07 algorithm
+        // setEnergy(0x60) should produce a specific CRC
+        let cmd = CatMXCommands.setEnergy(0x60)
+        let bytes = Array(cmd)
+
+        // Manually calculate CRC8 with polynomial 0x07 for payload [0x60]
+        // Starting crc = 0, byte = 0x60 = 0110_0000
+        // crc ^= 0x60 -> crc = 0x60
+        // bit 7: crc=0x60, (crc & 0x80)=0, crc = 0xC0
+        // bit 6: crc=0xC0, (crc & 0x80)≠0, crc = (0xC0 << 1) ^ 0x07 = 0x80 ^ 0x07 = 0x87
+        // bit 5: crc=0x87, (crc & 0x80)≠0, crc = (0x87 << 1) ^ 0x07 = 0x0E ^ 0x07 = 0x09
+        // bit 4: crc=0x09, (crc & 0x80)=0, crc = 0x12
+        // bit 3: crc=0x12, (crc & 0x80)=0, crc = 0x24
+        // bit 2: crc=0x24, (crc & 0x80)=0, crc = 0x48
+        // bit 1: crc=0x48, (crc & 0x80)=0, crc = 0x90
+        // bit 0: crc=0x90, (crc & 0x80)≠0, crc = (0x90 << 1) ^ 0x07 = 0x20 ^ 0x07 = 0x27
+        let expectedCRC: UInt8 = 0x27
         let actualCRC = bytes[bytes.count - 2]
         #expect(actualCRC == expectedCRC)
+    }
+
+    @Test("CRC8 calculated on payload only, not command bytes")
+    func crc8_payloadOnly() {
+        // Two commands with same payload should have same CRC
+        // regardless of the command byte
+        let energyCmd = CatMXCommands.setEnergy(0x55)
+        let speedCmd = CatMXCommands.setSpeed(0x55)
+
+        let energyBytes = Array(energyCmd)
+        let speedBytes = Array(speedCmd)
+
+        // CRCs should match since both have same payload [0x55]
+        let energyCRC = energyBytes[energyBytes.count - 2]
+        let speedCRC = speedBytes[speedBytes.count - 2]
+        #expect(energyCRC == speedCRC)
     }
 
     // MARK: - Status Parsing Tests
@@ -149,16 +194,9 @@ struct CatMXCommandsTests {
     @Test("parseStatusResponse extracts status byte")
     func parseStatusResponse_extractsStatusByte() {
         // Build a mock status response
-        // [0x51, 0x78, 0xA7, 0x00, 0x01, 0x00, status, crc, 0xFF]
-        var response: [UInt8] = [0x51, 0x78, 0xA7, 0x00, 0x01, 0x00, 0x00]
-
-        // Calculate CRC
-        var crc: UInt8 = 0
-        for i in 2..<response.count {
-            crc ^= response[i]
-        }
-        response.append(crc)
-        response.append(0xFF)
+        // [0x51, 0x78, 0xA3, 0x00, 0x01, 0x00, status, crc, 0xFF]
+        // Note: getStatus command ID is 0xA3
+        let response: [UInt8] = [0x51, 0x78, 0xA3, 0x00, 0x01, 0x00, 0x00, 0x00, 0xFF]
 
         let status = CatMXCommands.parseStatusResponse(Data(response))
         #expect(status == 0x00)

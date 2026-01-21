@@ -108,6 +108,7 @@ final class CatMXPrinter: ThermalPrinter {
             printerLogger.debug("Setting default quality and energy...")
             try await setQuality(.normal)
             try await setEnergy(0x60)
+            try await applyEnergy()
 
             printerLogger.info("Successfully connected to \(printer.displayName)")
 
@@ -152,13 +153,7 @@ final class CatMXPrinter: ThermalPrinter {
             let totalRows = bitmap.height
             printerLogger.info("Total rows to print: \(totalRows)")
 
-            // Send start print command
-            let startCmd = CatMXCommands.startPrint(totalRows: UInt16(totalRows))
-            printerLogger.debug("Sending START_PRINT command (\(startCmd.count) bytes): \(startCmd.map { String(format: "%02X", $0) }.joined(separator: " "))")
-            try await sendCommand(startCmd, to: characteristic)
-            printerLogger.debug("START_PRINT command sent successfully")
-
-            // Send each row
+            // Send each row (no startPrint command needed for Cat/MX protocol)
             for row in 0..<totalRows {
                 let rowData = bitmap.row(at: row)
                 let lineCmd = CatMXCommands.printLine(rowData: Array(rowData))
@@ -187,14 +182,8 @@ final class CatMXPrinter: ThermalPrinter {
 
             printerLogger.debug("All \(totalRows) rows sent")
 
-            // Send end print command
-            let endCmd = CatMXCommands.endPrint()
-            printerLogger.debug("Sending END_PRINT command (\(endCmd.count) bytes): \(endCmd.map { String(format: "%02X", $0) }.joined(separator: " "))")
-            try await sendCommand(endCmd, to: characteristic)
-            printerLogger.debug("END_PRINT command sent successfully")
-
-            // Feed paper
-            let feedCmd = CatMXCommands.feedPaper(lines: 20)
+            // Feed paper at end (no endPrint command needed for Cat/MX protocol)
+            let feedCmd = CatMXCommands.feedPaper(lines: 40)
             printerLogger.debug("Sending FEED_PAPER command (\(feedCmd.count) bytes): \(feedCmd.map { String(format: "%02X", $0) }.joined(separator: " "))")
             try await sendCommand(feedCmd, to: characteristic)
             printerLogger.debug("FEED_PAPER command sent successfully")
@@ -266,6 +255,26 @@ final class CatMXPrinter: ThermalPrinter {
 
         do {
             let cmd = CatMXCommands.feedPaper(lines: lines)
+            try await sendCommand(cmd, to: characteristic)
+        } catch let error as BLEError {
+            throw error.asPrinterError
+        } catch {
+            throw .unexpected(error.localizedDescription)
+        }
+    }
+
+    /// Applies the current energy settings.
+    ///
+    /// Must be called after setEnergy() to activate the configuration.
+    ///
+    /// - Throws: `PrinterError` if not connected or write fails.
+    func applyEnergy() async throws(PrinterError) {
+        guard let characteristic = writeCharacteristic else {
+            throw .connectionLost
+        }
+
+        do {
+            let cmd = CatMXCommands.applyEnergy()
             try await sendCommand(cmd, to: characteristic)
         } catch let error as BLEError {
             throw error.asPrinterError

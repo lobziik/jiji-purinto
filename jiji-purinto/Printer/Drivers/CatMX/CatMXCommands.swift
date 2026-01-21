@@ -12,8 +12,10 @@ import Foundation
 /// All commands follow the format:
 /// `[0x51, 0x78] [cmd] [00] [length_low] [length_high] [data...] [crc] [0xFF]`
 ///
-/// - CRC is XOR of all bytes from cmd to end of data (inclusive)
+/// - CRC is CRC8 with polynomial 0x07, calculated only on payload data
 /// - Length is little-endian (low byte first)
+///
+/// Based on the TypeScript reference implementation (@opuu/cat-printer).
 enum CatMXCommands {
 
     // MARK: - Configuration Commands
@@ -37,6 +39,23 @@ enum CatMXCommands {
         buildCommand(.setEnergy, data: [energy])
     }
 
+    /// Sets print speed.
+    ///
+    /// - Parameter speed: Speed value (typically 32).
+    /// - Returns: Command data to send to printer.
+    static func setSpeed(_ speed: UInt8) -> Data {
+        buildCommand(.setSpeed, data: [speed])
+    }
+
+    /// Applies energy settings.
+    ///
+    /// Must be called after setEnergy() to activate the energy configuration.
+    ///
+    /// - Returns: Command data to send to printer.
+    static func applyEnergy() -> Data {
+        buildCommand(.applyEnergy, data: [0x01])
+    }
+
     // MARK: - Paper Feed Commands
 
     /// Builds a feed paper command.
@@ -49,19 +68,17 @@ enum CatMXCommands {
         return buildCommand(.feedPaper, data: [lowByte, highByte])
     }
 
-    // MARK: - Print Job Commands
-
-    /// Builds a start print command.
+    /// Builds a retract paper command.
     ///
-    /// Must be called before sending print data.
-    ///
-    /// - Parameter totalRows: Total number of rows (height) to print.
+    /// - Parameter lines: Number of lines to retract.
     /// - Returns: Command data to send to printer.
-    static func startPrint(totalRows: UInt16) -> Data {
-        let lowByte = UInt8(totalRows & 0xFF)
-        let highByte = UInt8((totalRows >> 8) & 0xFF)
-        return buildCommand(.startPrint, data: [lowByte, highByte])
+    static func retract(lines: UInt16) -> Data {
+        let lowByte = UInt8(lines & 0xFF)
+        let highByte = UInt8((lines >> 8) & 0xFF)
+        return buildCommand(.retract, data: [lowByte, highByte])
     }
+
+    // MARK: - Print Commands
 
     /// Builds a print line command.
     ///
@@ -72,15 +89,6 @@ enum CatMXCommands {
     /// - Returns: Command data to send to printer.
     static func printLine(rowData: [UInt8]) -> Data {
         buildCommand(.printLine, data: rowData)
-    }
-
-    /// Builds an end print command.
-    ///
-    /// Must be called after all print data has been sent.
-    ///
-    /// - Returns: Command data to send to printer.
-    static func endPrint() -> Data {
-        buildCommand(.endPrint, data: [])
     }
 
     // MARK: - Status Commands
@@ -127,12 +135,8 @@ enum CatMXCommands {
         // Payload data
         packet.append(contentsOf: data)
 
-        // Calculate CRC (XOR of cmd through data)
-        var crc: UInt8 = 0
-        for byte in packet.dropFirst(2) {  // Skip prefix bytes
-            crc ^= byte
-        }
-        packet.append(crc)
+        // Calculate CRC8 only on payload data
+        packet.append(crc8(data))
 
         // End marker
         packet.append(0xFF)
@@ -172,5 +176,28 @@ enum CatMXCommands {
             return .lowBattery
         }
         return nil
+    }
+
+    // MARK: - Private Helpers
+
+    /// Calculates CRC8 checksum with polynomial 0x07.
+    ///
+    /// This algorithm matches the TypeScript reference implementation.
+    ///
+    /// - Parameter data: The data bytes to calculate CRC for.
+    /// - Returns: The calculated CRC8 checksum.
+    private static func crc8(_ data: [UInt8]) -> UInt8 {
+        var crc: UInt8 = 0
+        for byte in data {
+            crc ^= byte
+            for _ in 0..<8 {
+                if (crc & 0x80) != 0 {
+                    crc = (crc << 1) ^ 0x07
+                } else {
+                    crc = crc << 1
+                }
+            }
+        }
+        return crc
     }
 }

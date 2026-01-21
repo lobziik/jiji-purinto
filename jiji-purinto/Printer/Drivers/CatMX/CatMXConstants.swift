@@ -51,6 +51,8 @@ enum CatMXConstants {
     // MARK: - Command Identifiers
 
     /// Command IDs for Cat/MX protocol.
+    ///
+    /// Based on the TypeScript reference implementation (@opuu/cat-printer).
     enum Command: UInt8 {
         /// Get device information.
         case getDeviceInfo = 0xA8
@@ -61,20 +63,23 @@ enum CatMXConstants {
         /// Set print energy/heat level.
         case setEnergy = 0xAF
 
+        /// Apply energy settings. Must call after setEnergy().
+        case applyEnergy = 0xBE
+
+        /// Set print speed.
+        case setSpeed = 0xBD
+
         /// Feed paper by specified amount.
         case feedPaper = 0xA1
 
-        /// Start a print job.
-        case startPrint = 0xA6
+        /// Retract paper.
+        case retract = 0xA0
 
         /// Print a line of data.
         case printLine = 0xA2
 
-        /// End a print job.
-        case endPrint = 0xA3
-
         /// Get printer status.
-        case getStatus = 0xA7
+        case getStatus = 0xA3
     }
 
     // MARK: - Quality Settings

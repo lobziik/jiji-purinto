@@ -76,12 +76,14 @@ struct PreviewScreen: View {
 
             // Print button
             BigButton("Print", systemImage: "printer") {
-                do {
-                    try coordinator.print()
-                } catch {
-                    // Guard failed or invalid transition
-                    // In v0.1, we just log; in v0.2+, show error UI
-                    print("Print failed: \(error)")
+                Task {
+                    do {
+                        try await coordinator.printCurrentImage()
+                    } catch {
+                        // Error is already handled by AppCoordinator (transitions to error state)
+                        // Log for debugging purposes
+                        print("Print failed: \(error)")
+                    }
                 }
             }
             .padding(.horizontal, 24)
