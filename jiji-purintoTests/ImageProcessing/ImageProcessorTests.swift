@@ -331,7 +331,8 @@ struct ImageProcessorTests {
     @Test("Gamma affects output")
     func gammaAffectsOutput() async throws {
         let processor = ImageProcessor()
-        let testImage = createTestImage(width: 400, height: 100, color: UIColor(white: 0.5, alpha: 1.0))
+        // Use a gradient image to clearly demonstrate gamma effect
+        let testImage = createGradientImage(width: 400, height: 100)
 
         let lowGamma = ImageSettings(
             brightness: 0,
