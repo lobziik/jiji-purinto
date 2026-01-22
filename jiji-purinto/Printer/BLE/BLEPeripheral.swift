@@ -52,6 +52,12 @@ final class BLEPeripheral: NSObject, @unchecked Sendable {
     /// Used for flow control when `canSendWriteWithoutResponse` is false.
     private let writeReadyContinuation = OSAllocatedUnfairLock<CheckedContinuation<Void, Never>?>(initialState: nil)
 
+    /// Tracks if peripheralIsReady was signaled while no continuation was waiting.
+    ///
+    /// This prevents lost signals when the callback fires before `waitForWriteReady()` sets up
+    /// its continuation. The signal is consumed on first check.
+    private let writeReadySignaled = OSAllocatedUnfairLock<Bool>(initialState: false)
+
     /// Creates a wrapper around the given peripheral.
     ///
     /// - Parameter peripheral: The connected CBPeripheral to wrap.
@@ -130,17 +136,54 @@ final class BLEPeripheral: NSObject, @unchecked Sendable {
     /// buffer is full. This method waits for the `peripheralIsReady(toSendWriteWithoutResponse:)`
     /// callback, which fires when buffer space becomes available.
     ///
+    /// This implementation handles a race condition where `peripheralIsReady` may fire
+    /// before this method sets up its continuation. The signal is stored in `writeReadySignaled`
+    /// and consumed on the next call.
+    ///
     /// Call this before each write-without-response to implement proper flow control
     /// and prevent silent data loss from buffer overflow.
     private func waitForWriteReady() async {
+        // Fast path: if CoreBluetooth says we can send, go ahead
         guard !peripheral.canSendWriteWithoutResponse else {
-            peripheralLogger.trace("Write ready immediately")
+            peripheralLogger.trace("Write ready immediately (canSend=true)")
             return
         }
 
+        // Check if signal was already received (handles race condition)
+        let alreadySignaled = writeReadySignaled.withLock { signaled in
+            if signaled {
+                signaled = false  // Consume the signal
+                return true
+            }
+            return false
+        }
+
+        if alreadySignaled {
+            peripheralLogger.trace("Write ready immediately (signal was pending)")
+            return
+        }
+
+        // Must wait for peripheralIsReady callback
         peripheralLogger.trace("Buffer full, waiting for write ready...")
         await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
             writeReadyContinuation.withLock { $0 = continuation }
+
+            // Double-check: signal may have arrived between our check and setting continuation
+            let signaledNow = writeReadySignaled.withLock { signaled in
+                if signaled {
+                    signaled = false
+                    return true
+                }
+                return false
+            }
+
+            if signaledNow {
+                // Signal arrived, resume immediately
+                writeReadyContinuation.withLock { cont in
+                    cont?.resume()
+                    cont = nil
+                }
+            }
         }
         peripheralLogger.trace("Write ready signal received")
     }
@@ -347,13 +390,26 @@ extension BLEPeripheral: CBPeripheralDelegate {
     /// Called when the peripheral is ready to accept more write-without-response data.
     ///
     /// This callback fires when CoreBluetooth's internal buffer has space after
-    /// `canSendWriteWithoutResponse` was `false`. Resumes the waiting continuation
-    /// set by `waitForWriteReady()`.
+    /// `canSendWriteWithoutResponse` was `false`. If a continuation is waiting,
+    /// it is resumed immediately. Otherwise, the signal is stored in `writeReadySignaled`
+    /// for the next `waitForWriteReady()` call to consume.
     nonisolated func peripheralIsReady(toSendWriteWithoutResponse peripheral: CBPeripheral) {
         peripheralLogger.trace("peripheralIsReady called - buffer has space")
+
+        // Try to resume waiting continuation
+        var resumed = false
         writeReadyContinuation.withLock { continuation in
-            continuation?.resume()
-            continuation = nil
+            if let cont = continuation {
+                cont.resume()
+                continuation = nil
+                resumed = true
+            }
+        }
+
+        // If no one was waiting, store the signal for later
+        if !resumed {
+            writeReadySignaled.withLock { $0 = true }
+            peripheralLogger.trace("peripheralIsReady: no waiter, signal stored")
         }
     }
 }
