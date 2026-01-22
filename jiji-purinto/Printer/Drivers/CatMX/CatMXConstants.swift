@@ -42,8 +42,8 @@ enum CatMXConstants {
     /// Print width in bytes (1 bit per pixel).
     static let printWidthBytes = printWidth / 8  // 48 bytes
 
-    /// Default paper feed after print (12mm = 96 rows at 203 DPI).
-    static let defaultFeedLines: UInt16 = 96
+    /// Default paper feed after print (9mm = 72 rows at 203 DPI).
+    static let defaultFeedLines: UInt16 = 72
 
     /// Delay between print rows in nanoseconds.
     ///

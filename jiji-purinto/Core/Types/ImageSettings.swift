@@ -27,7 +27,7 @@ enum DitherAlgorithm: String, CaseIterable, Sendable {
 /// These settings control how the image is converted to a 1-bit bitmap
 /// suitable for thermal printing.
 struct ImageSettings: Equatable, Sendable {
-    /// Brightness adjustment. Range: -1.0 to +1.0, default 0.
+    /// Brightness adjustment. Range: -1.0 to +1.0, default 0.0.
     var brightness: Float
 
     /// Contrast adjustment. Range: 0.5 to 2.0, default 1.0.
@@ -36,12 +36,27 @@ struct ImageSettings: Equatable, Sendable {
     /// Dithering algorithm for the final 1-bit conversion.
     var algorithm: DitherAlgorithm
 
+    /// Gamma correction value. Range: 0.8 to 2.0, default 1.4.
+    /// Values > 1.0 brighten midtones, improving thermal print quality.
+    var gamma: Float
+
+    /// Enable automatic levels (histogram stretching).
+    /// When true, expands image contrast to use the full dynamic range.
+    var autoLevels: Bool
+
+    /// Percentage of pixels to clip from histogram edges. Range: 0.0 to 5.0, default 1.0.
+    /// Only applies when autoLevels is enabled.
+    var clipPercent: Float
+
     /// Default settings optimized for thermal printing.
     ///
-    /// Slightly brighter and more contrasty to compensate for thermal printer characteristics.
+    /// Uses auto levels and gamma correction to improve print quality.
     static let `default` = ImageSettings(
-        brightness: 0.05,
-        contrast: 1.1,
-        algorithm: .floydSteinberg
+        brightness: 0.0,
+        contrast: 1.0,
+        algorithm: .floydSteinberg,
+        gamma: 1.4,
+        autoLevels: true,
+        clipPercent: 1.0
     )
 }

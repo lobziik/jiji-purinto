@@ -90,7 +90,14 @@ struct AppFSMTransitionTests {
     @Test("preview + settingsChanged -> preview with new settings")
     func preview_settingsChanged_updatesSettings() throws {
         let initialState = AppState.preview(image: testImage, settings: .default)
-        let newSettings = ImageSettings(brightness: 0.5, contrast: 1.5, algorithm: .atkinson)
+        let newSettings = ImageSettings(
+            brightness: 0.5,
+            contrast: 1.5,
+            algorithm: .atkinson,
+            gamma: 1.4,
+            autoLevels: true,
+            clipPercent: 1.0
+        )
 
         let next = try fsm.transition(from: initialState, event: .settingsChanged(newSettings))
 

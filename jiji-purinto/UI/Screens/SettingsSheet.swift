@@ -10,6 +10,8 @@ import SwiftUI
 /// Sheet for adjusting image processing settings with live preview.
 ///
 /// Provides controls for:
+/// - Auto levels toggle (histogram stretching)
+/// - Gamma correction (0.8 to 2.0)
 /// - Brightness adjustment (-1.0 to +1.0)
 /// - Contrast adjustment (0.5 to 2.0)
 /// - Dithering algorithm selection
@@ -33,6 +35,49 @@ struct SettingsSheet: View {
     var body: some View {
         NavigationView {
             Form {
+                // MARK: - Auto Levels Section
+
+                Section {
+                    Toggle("Auto Levels", isOn: $settings.autoLevels)
+                } header: {
+                    Text("Auto Levels")
+                } footer: {
+                    Text("Automatically stretch image contrast to use full dynamic range. Recommended for most images.")
+                }
+
+                // MARK: - Gamma Section
+
+                Section {
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack {
+                            Text("Gamma")
+                            Spacer()
+                            Text(gammaText)
+                                .font(.system(.body, design: .monospaced))
+                                .foregroundColor(.secondary)
+                        }
+
+                        Slider(
+                            value: $settings.gamma,
+                            in: 0.8...2.0,
+                            step: 0.1
+                        ) {
+                            Text("Gamma")
+                        } minimumValueLabel: {
+                            Image(systemName: "moon")
+                                .foregroundColor(.secondary)
+                        } maximumValueLabel: {
+                            Image(systemName: "sun.max")
+                                .foregroundColor(.secondary)
+                        }
+                        .accessibilityValue(gammaText)
+                    }
+                } header: {
+                    Text("Gamma")
+                } footer: {
+                    Text("Adjust midtone brightness. Higher values brighten the image for better thermal prints.")
+                }
+
                 // MARK: - Brightness Section
 
                 Section {
@@ -158,6 +203,10 @@ struct SettingsSheet: View {
     private var contrastText: String {
         String(format: "%.2f", settings.contrast)
     }
+
+    private var gammaText: String {
+        String(format: "%.1f", settings.gamma)
+    }
 }
 
 // MARK: - DitherAlgorithm Display Extensions
@@ -211,7 +260,10 @@ extension DitherAlgorithm {
         @State private var settings = ImageSettings(
             brightness: 0.3,
             contrast: 1.5,
-            algorithm: .atkinson
+            algorithm: .atkinson,
+            gamma: 1.8,
+            autoLevels: false,
+            clipPercent: 2.0
         )
 
         var body: some View {

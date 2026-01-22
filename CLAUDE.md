@@ -17,16 +17,16 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ```bash
 # Build
-xcodebuild build -scheme jiji-purinto -project jiji-purinto/jiji-purinto.xcodeproj
+xcodebuild build -scheme jiji-purinto -project jiji-purinto.xcodeproj
 
 # Run tests (unit + UI)
-xcodebuild test -scheme jiji-purinto -project jiji-purinto/jiji-purinto.xcodeproj -destination 'platform=iOS Simulator,name=iPhone 16'
+xcodebuild test -scheme jiji-purinto -project jiji-purinto.xcodeproj -destination 'platform=iOS Simulator,name=iPhone 16'
 
 # Run only unit tests
-xcodebuild test -scheme jiji-purinto -project jiji-purinto/jiji-purinto.xcodeproj -destination 'platform=iOS Simulator,name=iPhone 16' -only-testing:jiji-purintoTests
+xcodebuild test -scheme jiji-purinto -project jiji-purinto.xcodeproj -destination 'platform=iOS Simulator,name=iPhone 16' -only-testing:jiji-purintoTests
 
 # Archive for distribution
-xcodebuild archive -scheme jiji-purinto -project jiji-purinto/jiji-purinto.xcodeproj -archivePath build/JijiPurinto.xcarchive
+xcodebuild archive -scheme jiji-purinto -project jiji-purinto.xcodeproj -archivePath build/JijiPurinto.xcarchive
 ```
 
 ## Architecture

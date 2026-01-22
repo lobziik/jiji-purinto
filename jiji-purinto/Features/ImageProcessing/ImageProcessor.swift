@@ -14,9 +14,11 @@ import CoreGraphics
 /// 1. Normalize orientation
 /// 2. Resize to printer width (384px)
 /// 3. Convert to grayscale
-/// 4. Apply brightness/contrast adjustments
-/// 5. Apply dithering algorithm
-/// 6. Pack into 1-bit MonoBitmap
+/// 4. Apply histogram stretch (auto levels) if enabled
+/// 5. Apply gamma correction
+/// 6. Apply brightness/contrast adjustments
+/// 7. Apply dithering algorithm
+/// 8. Pack into 1-bit MonoBitmap
 ///
 /// ## Usage
 /// ```swift
@@ -50,14 +52,24 @@ actor ImageProcessor {
         // 4. Extract pixel values
         var pixels = try GrayscaleConverter.extractPixels(from: grayscale)
 
-        // 5. Apply brightness/contrast
+        // 5. Apply auto levels (histogram stretch) if enabled
+        if settings.autoLevels {
+            pixels = HistogramStretch.apply(to: pixels, clipPercent: settings.clipPercent)
+        }
+
+        // 6. Apply gamma correction
+        if settings.gamma != 1.0 {
+            pixels = GammaCorrection.apply(to: pixels, gamma: settings.gamma)
+        }
+
+        // 7. Apply brightness/contrast
         pixels = BrightnessContrast.apply(
             to: pixels,
             brightness: settings.brightness,
             contrast: settings.contrast
         )
 
-        // 6. Apply dithering
+        // 8. Apply dithering
         let ditherer = DitherAlgorithmFactory.create(for: settings.algorithm)
         let ditheredPixels = ditherer.dither(
             pixels: pixels,
@@ -69,7 +81,7 @@ actor ImageProcessor {
             throw .ditherFailed
         }
 
-        // 7. Pack into MonoBitmap
+        // 9. Pack into MonoBitmap
         do {
             return try MonoBitmap(
                 width: resized.width,
@@ -134,14 +146,24 @@ actor ImageProcessor {
         // 4. Extract pixel values
         var pixels = try GrayscaleConverter.extractPixels(from: grayscale)
 
-        // 5. Apply brightness/contrast
+        // 5. Apply auto levels (histogram stretch) if enabled
+        if settings.autoLevels {
+            pixels = HistogramStretch.apply(to: pixels, clipPercent: settings.clipPercent)
+        }
+
+        // 6. Apply gamma correction
+        if settings.gamma != 1.0 {
+            pixels = GammaCorrection.apply(to: pixels, gamma: settings.gamma)
+        }
+
+        // 7. Apply brightness/contrast
         pixels = BrightnessContrast.apply(
             to: pixels,
             brightness: settings.brightness,
             contrast: settings.contrast
         )
 
-        // 6. Apply dithering
+        // 8. Apply dithering
         let ditherer = DitherAlgorithmFactory.create(for: settings.algorithm)
         let ditheredPixels = ditherer.dither(
             pixels: pixels,
@@ -153,7 +175,7 @@ actor ImageProcessor {
             throw .ditherFailed
         }
 
-        // 7. Convert to UIImage for display
+        // 9. Convert to UIImage for display
         return try pixelsToUIImage(
             ditheredPixels,
             width: resized.width,
