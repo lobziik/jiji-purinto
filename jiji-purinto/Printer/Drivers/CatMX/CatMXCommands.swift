@@ -60,7 +60,7 @@ enum CatMXCommands {
 
     /// Builds a feed paper command.
     ///
-    /// - Parameter lines: Number of blank lines to feed (typically 20-40).
+    /// - Parameter lines: Number of blank lines to feed (typically 40-80).
     /// - Returns: Command data to send to printer.
     static func feedPaper(lines: UInt16) -> Data {
         let lowByte = UInt8(lines & 0xFF)
@@ -83,7 +83,7 @@ enum CatMXCommands {
     /// Builds a print line command.
     ///
     /// Each line should be exactly 48 bytes (384 pixels at 1 bit per pixel).
-    /// Bits are MSB first (leftmost pixel is bit 7 of first byte).
+    /// Bits are LSB first (leftmost pixel is bit 0 of first byte).
     ///
     /// - Parameter rowData: Raw bitmap data for one print line (48 bytes).
     /// - Returns: Command data to send to printer.
