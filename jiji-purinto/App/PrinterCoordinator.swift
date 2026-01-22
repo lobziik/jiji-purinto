@@ -38,10 +38,14 @@ final class PrinterCoordinator: ObservableObject {
     /// Whether a print operation is in progress.
     @Published private(set) var isPrinting: Bool = false
 
+    /// Current printer hardware settings.
+    @Published private(set) var printerSettings: PrinterSettings = .default
+
     // MARK: - Private
 
     private let fsm = PrinterFSM()
     private let storage = PrinterStorage()
+    private let settingsStorage = PrinterSettingsStorage()
     private let bleManager: BLEManager
     private var printer: ThermalPrinter?
 
@@ -81,6 +85,7 @@ final class PrinterCoordinator: ObservableObject {
     init() {
         self.bleManager = BLEManager()
         self.printer = CatMXPrinter(bleManager: bleManager)
+        self.printerSettings = settingsStorage.settings
         setupDisconnectHandler()
     }
 
@@ -303,6 +308,9 @@ final class PrinterCoordinator: ObservableObject {
                 deviceId: discoveredPrinter.id,
                 deviceName: discoveredPrinter.displayName
             ))
+
+            // Apply saved printer settings after successful connection
+            await applySavedSettings()
 
         } catch let error as PrinterError {
             try? send(.connectFailed(error))
@@ -581,6 +589,95 @@ final class PrinterCoordinator: ObservableObject {
         reconnectAttempts = 0
         lastConnectedDeviceId = nil
         lastConnectedDeviceName = nil
+    }
+
+    // MARK: - Printer Settings
+
+    /// Applies saved settings to the connected printer.
+    ///
+    /// Called automatically after successful connection.
+    /// Logs but does not throw errors to avoid blocking reconnection.
+    private func applySavedSettings() async {
+        guard let catMXPrinter = printer as? CatMXPrinter else {
+            coordinatorLogger.warning("applySavedSettings: printer driver not available (cast to CatMXPrinter failed)")
+            return
+        }
+
+        let qualityCatMX = printerSettings.quality.catMXQuality
+        let energyByte = printerSettings.energyByte
+
+        coordinatorLogger.info("applySavedSettings: START - quality=\(self.printerSettings.quality.rawValue) (catMX: 0x\(String(format: "%02X", qualityCatMX.rawValue))), energyPercent=\(self.printerSettings.energyPercent)% (byte: 0x\(String(format: "%02X", energyByte)))")
+
+        do {
+            coordinatorLogger.debug("applySavedSettings: calling setQuality(\(self.printerSettings.quality.rawValue))...")
+            try await catMXPrinter.setQuality(qualityCatMX)
+            coordinatorLogger.debug("applySavedSettings: setQuality completed")
+
+            coordinatorLogger.debug("applySavedSettings: calling setEnergy(0x\(String(format: "%02X", energyByte)))...")
+            try await catMXPrinter.setEnergy(energyByte)
+            coordinatorLogger.debug("applySavedSettings: setEnergy completed")
+
+            coordinatorLogger.debug("applySavedSettings: calling applyEnergy()...")
+            try await catMXPrinter.applyEnergy()
+            coordinatorLogger.debug("applySavedSettings: applyEnergy completed")
+
+            coordinatorLogger.info("applySavedSettings: SUCCESS - all printer settings applied")
+        } catch {
+            coordinatorLogger.error("applySavedSettings: FAILED - \(error.localizedDescription)")
+        }
+    }
+
+    /// Applies new settings to the connected printer and persists them.
+    ///
+    /// - Parameter settings: The new settings to apply.
+    /// - Throws: `PrinterError` if the printer is not connected or the command fails.
+    func applySettings(_ settings: PrinterSettings) async throws(PrinterError) {
+        guard let catMXPrinter = printer as? CatMXPrinter else {
+            coordinatorLogger.error("applySettings: printer driver not available (cast to CatMXPrinter failed)")
+            throw .unexpected("Printer driver not available")
+        }
+
+        guard state.isConnected else {
+            coordinatorLogger.error("applySettings: printer not connected (state: \(String(describing: self.state)))")
+            throw .connectionLost
+        }
+
+        let qualityCatMX = settings.quality.catMXQuality
+        let energyByte = settings.energyByte
+
+        coordinatorLogger.info("applySettings: START - quality=\(settings.quality.rawValue) (catMX: 0x\(String(format: "%02X", qualityCatMX.rawValue))), energyPercent=\(settings.energyPercent)% (byte: 0x\(String(format: "%02X", energyByte)))")
+
+        coordinatorLogger.debug("applySettings: calling setQuality(\(settings.quality.rawValue))...")
+        try await catMXPrinter.setQuality(qualityCatMX)
+        coordinatorLogger.debug("applySettings: setQuality completed")
+
+        coordinatorLogger.debug("applySettings: calling setEnergy(0x\(String(format: "%02X", energyByte)))...")
+        try await catMXPrinter.setEnergy(energyByte)
+        coordinatorLogger.debug("applySettings: setEnergy completed")
+
+        coordinatorLogger.debug("applySettings: calling applyEnergy()...")
+        try await catMXPrinter.applyEnergy()
+        coordinatorLogger.debug("applySettings: applyEnergy completed")
+
+        settingsStorage.save(settings)
+        printerSettings = settings
+        coordinatorLogger.info("applySettings: SUCCESS - settings applied and saved (quality=\(settings.quality.rawValue), energy=\(settings.energyPercent)%)")
+    }
+
+    /// Updates settings locally and persists them without sending to printer.
+    ///
+    /// Use this method for immediate UI updates when the user changes settings.
+    /// The actual printer commands are sent via `applySettings`.
+    ///
+    /// - Parameter settings: The new settings to save.
+    func updateSettings(_ settings: PrinterSettings) {
+        let oldQuality = printerSettings.quality.rawValue
+        let oldEnergy = printerSettings.energyPercent
+
+        printerSettings = settings
+        settingsStorage.save(settings)
+
+        coordinatorLogger.info("updateSettings: quality \(oldQuality) -> \(settings.quality.rawValue), energy \(oldEnergy)% -> \(settings.energyPercent)% (local only, not sent to printer)")
     }
 }
 

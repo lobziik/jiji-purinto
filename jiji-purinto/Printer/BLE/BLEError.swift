@@ -61,6 +61,9 @@ enum BLEError: Error, Sendable {
     /// Peripheral is not connected.
     case notConnected
 
+    /// Device not found (not in cache and not known to system).
+    case deviceNotFound
+
     /// Converts this BLE error to a PrinterError for the higher-level API.
     var asPrinterError: PrinterError {
         switch self {
@@ -96,6 +99,8 @@ enum BLEError: Error, Sendable {
             return .connectionFailed(reason: "Operation timed out")
         case .notConnected:
             return .connectionLost
+        case .deviceNotFound:
+            return .connectionFailed(reason: "Device not found - please scan again")
         }
     }
 }
@@ -135,6 +140,8 @@ extension BLEError: LocalizedError {
             return "Operation timed out"
         case .notConnected:
             return "Not connected"
+        case .deviceNotFound:
+            return "Device not found"
         }
     }
 }

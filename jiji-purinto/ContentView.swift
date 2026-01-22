@@ -119,31 +119,38 @@ struct DoneScreen: View {
     @ObservedObject var coordinator: AppCoordinator
 
     var body: some View {
-        VStack(spacing: 32) {
-            Spacer()
+        ZStack(alignment: .topLeading) {
+            // Main content
+            VStack(spacing: 32) {
+                Spacer()
 
-            Image(systemName: "checkmark.circle.fill")
-                .font(.system(size: 100))
-                .foregroundColor(.green)
+                Image(systemName: "checkmark.circle.fill")
+                    .font(.system(size: 100))
+                    .foregroundColor(.green)
 
-            Text("Done!")
-                .font(.largeTitle.weight(.bold))
+                Text("Done!")
+                    .font(.largeTitle.weight(.bold))
 
-            Spacer()
+                Spacer()
 
-            VStack(spacing: 16) {
                 BigButton("Print Another", systemImage: "photo.on.rectangle") {
                     coordinator.trySend(.openGallery)
                 }
-
-                Button("Back to Home") {
-                    coordinator.trySend(.reset)
-                }
-                .font(.body)
-                .foregroundColor(.secondary)
+                .padding(.horizontal, 24)
+                .padding(.bottom, 32)
             }
-            .padding(.horizontal, 24)
-            .padding(.bottom, 32)
+
+            // Home button - top left
+            Button {
+                coordinator.trySend(.reset)
+            } label: {
+                Image(systemName: "house.fill")
+                    .font(.system(size: 20))
+                    .foregroundColor(.secondary)
+                    .frame(width: 44, height: 44)
+            }
+            .padding(.leading, 16)
+            .padding(.top, 8)
         }
     }
 }

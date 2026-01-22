@@ -15,7 +15,7 @@ enum DebugConfig {
     /// Enables the debug menu in Settings.
     ///
     /// Set to `false` for release builds.
-    static let enableDebugMenu = true
+    static let enableDebugMenu = false
 }
 
 /// Available test patterns for printer diagnostics.

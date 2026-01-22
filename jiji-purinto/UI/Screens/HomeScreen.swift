@@ -17,10 +17,25 @@ struct HomeScreen: View {
     /// Whether the debug menu sheet is showing.
     @State private var showDebugSheet = false
 
+    /// Whether the printer settings sheet is showing.
+    @State private var showPrinterSettingsSheet = false
+
     var body: some View {
         VStack(spacing: 0) {
-            // Top bar with debug button (left) and printer status (right)
+            // Top bar with settings/debug buttons (left) and printer status (right)
             HStack {
+                // Printer settings button
+                Button {
+                    showPrinterSettingsSheet = true
+                } label: {
+                    Image(systemName: "gearshape")
+                        .font(.system(size: 20))
+                        .foregroundColor(coordinator.printerCoordinator.isReady ? .primary : .secondary)
+                        .frame(width: 44, height: 44)
+                }
+                .disabled(!coordinator.printerCoordinator.isReady)
+                .accessibilityLabel("Printer settings")
+
                 // Debug button (only visible when debug menu is enabled)
                 if DebugConfig.enableDebugMenu {
                     Button {
@@ -56,6 +71,17 @@ struct HomeScreen: View {
         }
         .sheet(isPresented: $showDebugSheet) {
             DebugMenuSheet(coordinator: coordinator)
+        }
+        .sheet(isPresented: $showPrinterSettingsSheet) {
+            PrinterSettingsSheet(
+                settings: Binding(
+                    get: { coordinator.printerCoordinator.printerSettings },
+                    set: { coordinator.printerCoordinator.updateSettings($0) }
+                ),
+                onSettingsChanged: { settings in
+                    try await coordinator.printerCoordinator.applySettings(settings)
+                }
+            )
         }
     }
 }

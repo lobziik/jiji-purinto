@@ -103,6 +103,9 @@ final class CatMXPrinter: ThermalPrinter {
     func connect(to printer: DiscoveredPrinter) async throws(PrinterError) {
         printerLogger.info("Connecting to printer: \(printer.displayName) (\(printer.id))")
         do {
+            // Wait for Bluetooth to be ready (handles cold start race condition)
+            try await bleManager.waitForReady(timeout: 5.0)
+
             // Connect to peripheral
             printerLogger.debug("Establishing BLE connection...")
             let connectedPeripheral = try await bleManager.connect(peripheralId: printer.id, timeout: 10.0)
@@ -134,11 +137,8 @@ final class CatMXPrinter: ThermalPrinter {
             deviceId = printer.id
             deviceName = printer.displayName
 
-            // Set default quality and energy
-            printerLogger.debug("Setting default quality and energy...")
-            try await setQuality(.normal)
-            try await setEnergy(0x60)
-            try await applyEnergy()
+            // NOTE: Default settings are NOT applied here to avoid race condition.
+            // PrinterCoordinator.applySavedSettings() applies saved settings after connection.
 
             // Subscribe to printer notifications for flow control
             if let notifyChar = notifyCharacteristic {
@@ -271,16 +271,32 @@ final class CatMXPrinter: ThermalPrinter {
     /// - Throws: `PrinterError` if not connected or write fails.
     func setQuality(_ quality: CatMXConstants.Quality) async throws(PrinterError) {
         guard let characteristic = writeCharacteristic else {
+            printerLogger.error("setQuality failed: not connected (writeCharacteristic is nil)")
             throw .connectionLost
         }
 
+        let qualityName: String
+        switch quality {
+        case .light: qualityName = "light"
+        case .normal: qualityName = "normal"
+        case .dark: qualityName = "dark"
+        }
+
+        printerLogger.info("setQuality: setting quality to \(qualityName) (rawValue: 0x\(String(format: "%02X", quality.rawValue)))")
+
         do {
             let cmd = CatMXCommands.setQuality(quality)
+            let hexCmd = cmd.map { String(format: "%02X", $0) }.joined(separator: " ")
+            printerLogger.debug("setQuality: command bytes [\(hexCmd)]")
+
             try await sendCommand(cmd, to: characteristic)
             self.quality = quality
+            printerLogger.info("setQuality: SUCCESS - quality set to \(qualityName)")
         } catch let error as BLEError {
+            printerLogger.error("setQuality: FAILED with BLEError: \(error.localizedDescription)")
             throw error.asPrinterError
         } catch {
+            printerLogger.error("setQuality: FAILED with error: \(error.localizedDescription)")
             throw .unexpected(error.localizedDescription)
         }
     }
@@ -291,16 +307,27 @@ final class CatMXPrinter: ThermalPrinter {
     /// - Throws: `PrinterError` if not connected or write fails.
     func setEnergy(_ energy: UInt8) async throws(PrinterError) {
         guard let characteristic = writeCharacteristic else {
+            printerLogger.error("setEnergy failed: not connected (writeCharacteristic is nil)")
             throw .connectionLost
         }
 
+        // Calculate percentage for logging (0x00=0%, 0xFF=100%)
+        let percentApprox = Int(Double(energy) / 255.0 * 100.0)
+        printerLogger.info("setEnergy: setting energy to 0x\(String(format: "%02X", energy)) (~\(percentApprox)%)")
+
         do {
             let cmd = CatMXCommands.setEnergy(energy)
+            let hexCmd = cmd.map { String(format: "%02X", $0) }.joined(separator: " ")
+            printerLogger.debug("setEnergy: command bytes [\(hexCmd)]")
+
             try await sendCommand(cmd, to: characteristic)
             self.energy = energy
+            printerLogger.info("setEnergy: SUCCESS - energy set to 0x\(String(format: "%02X", energy))")
         } catch let error as BLEError {
+            printerLogger.error("setEnergy: FAILED with BLEError: \(error.localizedDescription)")
             throw error.asPrinterError
         } catch {
+            printerLogger.error("setEnergy: FAILED with error: \(error.localizedDescription)")
             throw .unexpected(error.localizedDescription)
         }
     }
@@ -331,15 +358,24 @@ final class CatMXPrinter: ThermalPrinter {
     /// - Throws: `PrinterError` if not connected or write fails.
     func applyEnergy() async throws(PrinterError) {
         guard let characteristic = writeCharacteristic else {
+            printerLogger.error("applyEnergy failed: not connected (writeCharacteristic is nil)")
             throw .connectionLost
         }
 
+        printerLogger.info("applyEnergy: applying energy settings (activating configuration)")
+
         do {
             let cmd = CatMXCommands.applyEnergy()
+            let hexCmd = cmd.map { String(format: "%02X", $0) }.joined(separator: " ")
+            printerLogger.debug("applyEnergy: command bytes [\(hexCmd)]")
+
             try await sendCommand(cmd, to: characteristic)
+            printerLogger.info("applyEnergy: SUCCESS - energy settings applied")
         } catch let error as BLEError {
+            printerLogger.error("applyEnergy: FAILED with BLEError: \(error.localizedDescription)")
             throw error.asPrinterError
         } catch {
+            printerLogger.error("applyEnergy: FAILED with error: \(error.localizedDescription)")
             throw .unexpected(error.localizedDescription)
         }
     }

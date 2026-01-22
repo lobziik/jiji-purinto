@@ -206,8 +206,23 @@ actor BLEManager {
     func connect(peripheralId: UUID, timeout: TimeInterval = 10.0) async throws(BLEError) -> BLEPeripheral {
         try checkBluetoothState()
 
-        guard let peripheral = delegateHandler.getPeripheral(id: peripheralId) else {
-            throw .connectionFailed(nil)
+        // First check discovery cache (from recent scan)
+        var peripheral = delegateHandler.getPeripheral(id: peripheralId)
+
+        // Fallback: retrieve known peripheral (for cold start reconnection)
+        if peripheral == nil {
+            bleLogger.debug("Peripheral not in cache, attempting retrieval for \(peripheralId)")
+            let knownPeripherals = centralManager.retrievePeripherals(withIdentifiers: [peripheralId])
+            if let known = knownPeripherals.first {
+                delegateHandler.addPeripheral(known, rssi: 0)
+                peripheral = known
+                bleLogger.debug("Retrieved known peripheral: \(known.name ?? "unnamed")")
+            }
+        }
+
+        guard let peripheral else {
+            bleLogger.warning("Device not found: \(peripheralId)")
+            throw .deviceNotFound
         }
 
         do {
@@ -354,6 +369,19 @@ private final class DelegateHandler: NSObject, CBCentralManagerDelegate, @unchec
     func getPeripheral(id: UUID) -> CBPeripheral? {
         lock.withLock { state in
             state.discoveredPeripherals[id]?.peripheral
+        }
+    }
+
+    /// Adds a peripheral to the discovery cache.
+    ///
+    /// Used when retrieving known peripherals for reconnection.
+    ///
+    /// - Parameters:
+    ///   - peripheral: The peripheral to add.
+    ///   - rssi: The RSSI value (use 0 for retrieved peripherals).
+    func addPeripheral(_ peripheral: CBPeripheral, rssi: Int) {
+        lock.withLock { state in
+            state.discoveredPeripherals[peripheral.identifier] = (peripheral, rssi)
         }
     }
 
