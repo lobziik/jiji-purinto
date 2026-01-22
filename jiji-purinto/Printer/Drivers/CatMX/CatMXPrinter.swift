@@ -147,6 +147,10 @@ final class CatMXPrinter: ThermalPrinter {
                 printerLogger.debug("Notification subscription established")
             }
 
+            // Log MTU for debugging transmission issues
+            let mtu = connectedPeripheral.peripheral.maximumWriteValueLength(for: .withoutResponse)
+            printerLogger.warning("MTU for writeWithoutResponse: \(mtu)")
+
             printerLogger.info("Successfully connected to \(printer.displayName)")
 
         } catch let error as BLEError {
@@ -176,7 +180,7 @@ final class CatMXPrinter: ThermalPrinter {
     }
 
     func print(bitmap: MonoBitmap, onProgress: @escaping (Double) -> Void) async throws(PrinterError) {
-        printerLogger.warning("PRINT CALLED - bitmap: \(bitmap.width)x\(bitmap.height)")
+        printerLogger.trace("PRINT CALLED - bitmap: \(bitmap.width)x\(bitmap.height)")
 
         // Re-entrancy guard to detect duplicate print calls
         guard !isPrintingInProgress else {
@@ -202,18 +206,34 @@ final class CatMXPrinter: ThermalPrinter {
 
         do {
             let totalRows = bitmap.height
-            printerLogger.warning("Total rows to print: \(totalRows)")
+            printerLogger.trace("Total rows to print: \(totalRows)")
 
             var rowsSentCount = 0
 
             // Send each row with per-row delay to prevent buffer overflow
             for row in 0..<totalRows {
                 let rowData = bitmap.row(at: row)
-                let lineCmd = CatMXCommands.printLine(rowData: Array(rowData))
+
+                // Reverse bits in each byte (MSB <-> LSB)
+                let reversedRowData = rowData.map { byte -> UInt8 in
+                    var result: UInt8 = 0
+                    var b = byte
+                    for _ in 0..<8 {
+                        result = (result << 1) | (b & 1)
+                        b >>= 1
+                    }
+                    return result
+                }
+
+                let lineCmd = CatMXCommands.printLine(rowData: reversedRowData)
 
                 if row == 0 {
-                    printerLogger.debug("First row command (\(lineCmd.count) bytes)")
+                    printerLogger.trace("First row command (\(lineCmd.count) bytes)")
                 }
+
+                // Log transmitted data (debug level for visibility)
+                let hexData = lineCmd.map { String(format: "%02X", $0) }.joined(separator: " ")
+                printerLogger.debug("TX row \(row): \(lineCmd.count)B [\(hexData)]")
 
                 try await sendCommand(lineCmd, to: characteristic)
                 rowsSentCount += 1
@@ -229,19 +249,19 @@ final class CatMXPrinter: ThermalPrinter {
 
                 // Log every 50 rows
                 if row % 50 == 0 {
-                    printerLogger.debug("Print progress: row \(row)/\(totalRows)")
+                    printerLogger.trace("Print progress: row \(row)/\(totalRows)")
                 }
             }
 
-            printerLogger.warning("PRINT LOOP DONE - sent \(rowsSentCount) rows out of \(totalRows)")
+            printerLogger.trace("PRINT LOOP DONE - sent \(rowsSentCount) rows out of \(totalRows)")
 
             // Feed paper at end (no endPrint command needed for Cat/MX protocol)
             let feedLines = CatMXConstants.defaultFeedLines
             let feedCmd = CatMXCommands.feedPaper(lines: feedLines)
-            printerLogger.warning("Sending FEED_PAPER: \(feedLines) lines")
+            printerLogger.trace("Sending FEED_PAPER: \(feedLines) lines")
             try await sendCommand(feedCmd, to: characteristic)
 
-            printerLogger.warning("Print job completed successfully")
+            printerLogger.trace("Print job completed successfully")
 
         } catch let error as BLEError {
             printerLogger.error("Print failed with BLEError: \(error.localizedDescription)")

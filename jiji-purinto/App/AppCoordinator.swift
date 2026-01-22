@@ -7,6 +7,7 @@
 
 import SwiftUI
 import Combine
+import Photos
 import os
 
 /// Logger for app coordination.
@@ -350,6 +351,46 @@ final class AppCoordinator: ObservableObject {
             try send(.printSuccess)
         } catch {
             // Already printed successfully, ignore state transition error
+        }
+    }
+
+    // MARK: - Debug: Save to Gallery
+
+    /// Saves the processed MonoBitmap as a PNG to the photo gallery.
+    ///
+    /// Only available when `DebugConfig.enableDebugMenu` is true.
+    /// Useful for inspecting the exact 1-bit image that would be sent to the printer.
+    ///
+    /// - Throws: `AppError` if processing or saving fails.
+    func saveMonoBitmapToGallery() async throws(AppError) {
+        // Process the image to get MonoBitmap
+        let bitmap: MonoBitmap
+        do {
+            bitmap = try await processForPrinting()
+        } catch {
+            throw .processingFailed(reason: error.localizedDescription)
+        }
+
+        // Convert MonoBitmap to raw UIImage (no color transformations)
+        let image: UIImage
+        do {
+            image = try await imageProcessor.bitmapToRawUIImage(bitmap)
+        } catch {
+            throw .processingFailed(reason: "Failed to convert bitmap to image")
+        }
+
+        // Request photo library access and save
+        let status = await PHPhotoLibrary.requestAuthorization(for: .addOnly)
+        guard status == .authorized || status == .limited else {
+            throw .unexpected("Photo library access denied")
+        }
+
+        do {
+            try await PHPhotoLibrary.shared().performChanges {
+                PHAssetCreationRequest.creationRequestForAsset(from: image)
+            }
+        } catch {
+            throw .unexpected("Failed to save image: \(error.localizedDescription)")
         }
     }
 }

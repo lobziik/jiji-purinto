@@ -186,10 +186,18 @@ actor ImageProcessor {
         )
     }
 
-    // MARK: - Private Helpers
+    // MARK: - Bitmap Conversion
 
-    /// Converts a MonoBitmap to UIImage for display.
-    private func bitmapToUIImage(_ bitmap: MonoBitmap) throws(ProcessingError) -> UIImage {
+    /// Converts a MonoBitmap to UIImage for display or saving.
+    ///
+    /// Unpacks the 1-bit packed bitmap to a grayscale UIImage where:
+    /// - MonoBitmap bit 1 (black) → pixel value 0 (black)
+    /// - MonoBitmap bit 0 (white) → pixel value 255 (white)
+    ///
+    /// - Parameter bitmap: The MonoBitmap to convert.
+    /// - Returns: A UIImage representation of the bitmap.
+    /// - Throws: `ProcessingError.conversionFailed` if the conversion fails.
+    func bitmapToUIImage(_ bitmap: MonoBitmap) throws(ProcessingError) -> UIImage {
         // Unpack bits to bytes for display
         var pixels = [UInt8](repeating: 0, count: bitmap.width * bitmap.height)
 
@@ -204,6 +212,58 @@ actor ImageProcessor {
 
         return try pixelsToUIImage(pixels, width: bitmap.width, height: bitmap.height)
     }
+
+    /// Converts a MonoBitmap to UIImage for debug saving without any color transformations.
+    ///
+    /// Creates an exact representation of the bitmap that would be sent to the printer.
+    /// Uses device gray color space to avoid any gamma or color management transformations.
+    ///
+    /// - MonoBitmap bit 1 (black/printed) → pixel value 0 (pure black)
+    /// - MonoBitmap bit 0 (white/not printed) → pixel value 255 (pure white)
+    ///
+    /// - Parameter bitmap: The MonoBitmap to convert.
+    /// - Returns: A UIImage with exact 1-bit representation (no transformations).
+    /// - Throws: `ProcessingError.conversionFailed` if the conversion fails.
+    func bitmapToRawUIImage(_ bitmap: MonoBitmap) throws(ProcessingError) -> UIImage {
+        // Unpack bits to bytes - exact representation
+        var pixels = [UInt8](repeating: 0, count: bitmap.width * bitmap.height)
+
+        for y in 0..<bitmap.height {
+            for x in 0..<bitmap.width {
+                let index = y * bitmap.width + x
+                // In MonoBitmap: 1 = black (printed), 0 = white (not printed)
+                // Output: 0 = pure black, 255 = pure white
+                pixels[index] = bitmap.pixel(at: x, y: y) ? 0 : 255
+            }
+        }
+
+        // Use device gray color space - no color management transformations
+        let grayColorSpace = CGColorSpaceCreateDeviceGray()
+
+        let image: CGImage? = pixels.withUnsafeMutableBytes { buffer in
+            guard let context = CGContext(
+                data: buffer.baseAddress,
+                width: bitmap.width,
+                height: bitmap.height,
+                bitsPerComponent: 8,
+                bytesPerRow: bitmap.width,
+                space: grayColorSpace,
+                bitmapInfo: CGImageAlphaInfo.none.rawValue
+            ) else {
+                return nil
+            }
+
+            return context.makeImage()
+        }
+
+        guard let cgImage = image else {
+            throw .conversionFailed
+        }
+
+        return UIImage(cgImage: cgImage)
+    }
+
+    // MARK: - Private Helpers
 
     /// Converts grayscale pixel array to UIImage.
     private func pixelsToUIImage(

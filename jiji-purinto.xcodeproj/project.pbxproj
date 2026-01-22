@@ -402,6 +402,7 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription = "Jiji-Purinto needs Bluetooth to connect to your thermal printer.";
 				INFOPLIST_KEY_NSBluetoothPeripheralUsageDescription = "Jiji-Purinto needs Bluetooth to connect to your thermal printer.";
+				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "Jiji-Purinto saves processed images to your photo library for debugging purposes.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UIBackgroundModes = "bluetooth-central";
@@ -433,6 +434,7 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription = "Jiji-Purinto needs Bluetooth to connect to your thermal printer.";
 				INFOPLIST_KEY_NSBluetoothPeripheralUsageDescription = "Jiji-Purinto needs Bluetooth to connect to your thermal printer.";
+				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "Jiji-Purinto saves processed images to your photo library for debugging purposes.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UIBackgroundModes = "bluetooth-central";

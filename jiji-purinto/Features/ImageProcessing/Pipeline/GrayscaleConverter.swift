@@ -155,20 +155,30 @@ enum GrayscaleConverter {
     // MARK: - Private Helpers
 
     /// Creates a vImage buffer from a CGImage, converting to ARGB8888 format.
+    ///
+    /// Allocates our own buffer and passes it to CGContext to guarantee exact `bytesPerRow`.
+    /// This prevents alignment-related artifacts that occur when CGContext chooses its own
+    /// `bytesPerRow` (e.g., padding to 16 or 64 byte boundaries).
     private static func createSourceBuffer(from image: CGImage) throws(ProcessingError) -> vImage_Buffer {
         let width = image.width
         let height = image.height
 
-        // Create ARGB8888 buffer
         guard let colorSpace = CGColorSpace(name: CGColorSpace.sRGB) else {
             throw .conversionFailed
         }
 
         let bitmapInfo = CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedFirst.rawValue)
         let bytesPerRow = width * 4
+        let bufferSize = bytesPerRow * height
+
+        // Allocate our own buffer - CGContext MUST use our bytesPerRow when we provide data
+        let bufferData = UnsafeMutableRawPointer.allocate(
+            byteCount: bufferSize,
+            alignment: MemoryLayout<UInt8>.alignment
+        )
 
         guard let context = CGContext(
-            data: nil,
+            data: bufferData,
             width: width,
             height: height,
             bitsPerComponent: 8,
@@ -176,26 +186,16 @@ enum GrayscaleConverter {
             space: colorSpace,
             bitmapInfo: bitmapInfo.rawValue
         ) else {
+            bufferData.deallocate()
             throw .conversionFailed
         }
 
         // Draw the image into ARGB format
         context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
 
-        guard let data = context.data else {
-            throw .conversionFailed
-        }
-
-        // Copy the data (context's buffer may be deallocated)
-        let bufferSize = bytesPerRow * height
-        let copiedData = UnsafeMutableRawPointer.allocate(
-            byteCount: bufferSize,
-            alignment: MemoryLayout<UInt8>.alignment
-        )
-        copiedData.copyMemory(from: data, byteCount: bufferSize)
-
+        // No copy needed - data is already in bufferData
         var buffer = vImage_Buffer()
-        buffer.data = copiedData
+        buffer.data = bufferData
         buffer.width = vImagePixelCount(width)
         buffer.height = vImagePixelCount(height)
         buffer.rowBytes = bytesPerRow

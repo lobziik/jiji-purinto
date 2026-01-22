@@ -74,23 +74,40 @@ struct PreviewScreen: View {
 
             Spacer()
 
-            // Print button
-            BigButton("Print", systemImage: "printer") {
-                Task {
-                    do {
-                        try await coordinator.printCurrentImage()
-                    } catch {
-                        // Error is already handled by AppCoordinator (transitions to error state)
-                        // Log for debugging purposes
-                        print("Print failed: \(error)")
+            // Button row: Debug Save (if enabled) + Print
+            HStack(spacing: 16) {
+                // Debug: Save to Gallery button (only in debug mode)
+                if DebugConfig.enableDebugMenu {
+                    BigButton("Save PNG", systemImage: "square.and.arrow.down") {
+                        Task {
+                            do {
+                                try await coordinator.saveMonoBitmapToGallery()
+                            } catch {
+                                print("Save failed: \(error)")
+                            }
+                        }
+                    }
+                    .disabled(coordinator.isProcessing)
+                }
+
+                // Print button
+                BigButton("Print", systemImage: "printer") {
+                    Task {
+                        do {
+                            try await coordinator.printCurrentImage()
+                        } catch {
+                            // Error is already handled by AppCoordinator (transitions to error state)
+                            // Log for debugging purposes
+                            print("Print failed: \(error)")
+                        }
                     }
                 }
+                .opacity(coordinator.printerReady ? 1.0 : 0.5)
+                .disabled(coordinator.isProcessing)
+                .accessibilityLabel(coordinator.printerReady ? "Print" : "Print (printer not connected)")
             }
             .padding(.horizontal, 24)
             .padding(.bottom, 32)
-            .opacity(coordinator.printerReady ? 1.0 : 0.5)
-            .disabled(coordinator.isProcessing)
-            .accessibilityLabel(coordinator.printerReady ? "Print" : "Print (printer not connected)")
         }
         .sheet(isPresented: $coordinator.showingSettings) {
             SettingsSheet(settings: $coordinator.imageSettings)
