@@ -95,15 +95,15 @@ Progress tracking for all development milestones.
   - [ ] Recovery suggestions
 - [ ] Auto-reconnect
   - [x] Attempt reconnect on app launch (implemented in PrinterCoordinator)
-  - [ ] Silent reconnect (no error if fails)
-  - [ ] Reconnect on connection lost
+  - [x] Silent reconnect (no error if fails)
+  - [x] Reconnect on connection lost
 - [ ] Localization (EN/RU)
   - [ ] String catalog setup
   - [ ] English strings
   - [ ] Russian strings
-- [ ] App icon
-  - [ ] Design app icon
-  - [ ] All required sizes
+- [x] App icon
+  - [x] Design app icon
+  - [x] All required sizes
 
 ## v1.0 — Release
 
