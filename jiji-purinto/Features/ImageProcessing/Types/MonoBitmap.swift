@@ -19,7 +19,7 @@ enum PrinterConstants {
 /// A 1-bit packed bitmap suitable for thermal printer output.
 ///
 /// The bitmap stores pixels as packed bits, where each byte contains 8 pixels.
-/// Bit 7 (MSB) represents the leftmost pixel in each byte.
+/// Bit 0 (LSB) represents the leftmost pixel in each byte (LSB first order).
 /// A bit value of 1 represents black, 0 represents white.
 ///
 /// ## Memory Layout
@@ -41,7 +41,7 @@ struct MonoBitmap: Equatable, Sendable {
 
     /// Packed 1-bit pixel data.
     ///
-    /// Each byte contains 8 pixels, MSB first.
+    /// Each byte contains 8 pixels, LSB first (bit 0 = leftmost pixel).
     /// Data size must equal `height × bytesPerRow`.
     let data: Data
 
@@ -127,7 +127,7 @@ struct MonoBitmap: Equatable, Sendable {
         precondition(y >= 0 && y < height, "Y coordinate out of bounds")
 
         let byteIndex = y * bytesPerRow + (x / 8)
-        let bitIndex = 7 - (x % 8)  // MSB first
+        let bitIndex = x % 8  // LSB first: bit 0 = leftmost
         let byte = data[data.startIndex + byteIndex]
         return (byte & (1 << bitIndex)) != 0
     }
@@ -150,7 +150,7 @@ struct MonoBitmap: Equatable, Sendable {
 
                 if isBlack {
                     let byteIndex = y * bytesPerRow + (x / 8)
-                    let bitIndex = 7 - (x % 8)  // MSB first
+                    let bitIndex = x % 8  // LSB first: bit 0 = leftmost
                     packedData[byteIndex] |= UInt8(1 << bitIndex)
                 }
             }

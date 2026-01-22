@@ -136,8 +136,8 @@ struct MonoBitmapTests {
         }
     }
 
-    @Test("Packs single black pixel correctly (MSB first)")
-    func packsSingleBlackPixelMSBFirst() throws {
+    @Test("Packs single black pixel correctly (LSB first)")
+    func packsSingleBlackPixelLSBFirst() throws {
         let width = PrinterConstants.printWidth
         let height = 1
         var pixels = [UInt8](repeating: 0, count: width * height)
@@ -146,8 +146,8 @@ struct MonoBitmapTests {
 
         let bitmap = try MonoBitmap(width: width, height: height, pixels: pixels)
 
-        // First byte should have MSB set (0x80 = 10000000)
-        #expect(bitmap.data[0] == 0x80)
+        // First byte should have LSB set (0x01 = 00000001) - bit 0 = leftmost pixel
+        #expect(bitmap.data[0] == 0x01)
 
         // Rest should be white
         for i in 1..<bitmap.data.count {
@@ -155,18 +155,18 @@ struct MonoBitmapTests {
         }
     }
 
-    @Test("Packs 8th pixel correctly (LSB)")
-    func packs8thPixelLSB() throws {
+    @Test("Packs 8th pixel correctly (MSB)")
+    func packs8thPixelMSB() throws {
         let width = PrinterConstants.printWidth
         let height = 1
         var pixels = [UInt8](repeating: 0, count: width * height)
-        // 8th pixel (index 7) is black
+        // 8th pixel (index 7) is black - rightmost pixel in first byte
         pixels[7] = 255
 
         let bitmap = try MonoBitmap(width: width, height: height, pixels: pixels)
 
-        // First byte should have LSB set (0x01 = 00000001)
-        #expect(bitmap.data[0] == 0x01)
+        // First byte should have MSB set (0x80 = 10000000) - bit 7 = rightmost pixel
+        #expect(bitmap.data[0] == 0x80)
     }
 
     @Test("Packs alternating pixels correctly")
@@ -182,9 +182,9 @@ struct MonoBitmapTests {
 
         let bitmap = try MonoBitmap(width: width, height: height, pixels: pixels)
 
-        // Every byte should be 0xAA (10101010)
+        // Every byte should be 0x55 (01010101) - LSB first: bits 0,2,4,6 set
         for i in 0..<PrinterConstants.bytesPerRow {
-            #expect(bitmap.data[i] == 0xAA)
+            #expect(bitmap.data[i] == 0x55)
         }
     }
 

@@ -147,8 +147,8 @@ enum PrinterTestPatterns {
                     let isBlackCell = (cellY % 2) != (cellX % 2)
 
                     if isBlackCell {
-                        // MSB first: bit 7 is leftmost pixel
-                        byte |= (1 << (7 - bitIndex))
+                        // LSB first: bit 0 is leftmost pixel
+                        byte |= (1 << bitIndex)
                     }
                 }
 
@@ -295,18 +295,19 @@ enum PrinterTestPatterns {
         for y in 0..<height {
             var row = Array(repeating: UInt8(0x00), count: widthBytes)
 
-            // MSB test: 0x80 = bit 7 set = leftmost pixel in byte
-            // LSB test: 0x01 = bit 0 set = rightmost pixel in byte
+            // LSB first bit order: bit 0 = leftmost pixel, bit 7 = rightmost pixel
+            // 0x01 = bit 0 set = leftmost pixel in byte
+            // 0x80 = bit 7 set = rightmost pixel in byte
 
             if y < height / 2 {
-                // First half: MSB (0x80) - should be LEFT pixel of each byte
-                for x in stride(from: 0, to: widthBytes, by: 4) {
-                    row[x] = 0x80
-                }
-            } else {
-                // Second half: LSB (0x01) - should be RIGHT pixel of each byte
+                // First half: 0x01 - should be LEFT pixel of each byte
                 for x in stride(from: 0, to: widthBytes, by: 4) {
                     row[x] = 0x01
+                }
+            } else {
+                // Second half: 0x80 - should be RIGHT pixel of each byte
+                for x in stride(from: 0, to: widthBytes, by: 4) {
+                    row[x] = 0x80
                 }
             }
 

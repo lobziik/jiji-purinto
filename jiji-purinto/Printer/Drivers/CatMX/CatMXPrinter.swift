@@ -213,19 +213,7 @@ final class CatMXPrinter: ThermalPrinter {
             // Send each row with per-row delay to prevent buffer overflow
             for row in 0..<totalRows {
                 let rowData = bitmap.row(at: row)
-
-                // Reverse bits in each byte (MSB <-> LSB)
-                let reversedRowData = rowData.map { byte -> UInt8 in
-                    var result: UInt8 = 0
-                    var b = byte
-                    for _ in 0..<8 {
-                        result = (result << 1) | (b & 1)
-                        b >>= 1
-                    }
-                    return result
-                }
-
-                let lineCmd = CatMXCommands.printLine(rowData: reversedRowData)
+                let lineCmd = CatMXCommands.printLine(rowData: Array(rowData))
 
                 if row == 0 {
                     printerLogger.trace("First row command (\(lineCmd.count) bytes)")
