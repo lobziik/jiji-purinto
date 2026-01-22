@@ -49,7 +49,7 @@ enum CatMXConstants {
     ///
     /// 3.5ms provides reliable printing; adjust based on printer model.
     /// If too slow, reduce to 2ms (2_000_000).
-    static let printRowDelayNs: UInt64 = 3_500_000
+    static let printRowDelayNs: UInt64 = 7_500_000
 
     // MARK: - Command Identifiers
 

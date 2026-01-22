@@ -61,28 +61,37 @@ struct DitherAlgorithmTests {
         #expect(result.allSatisfy { $0 == 0 })
     }
 
-    @Test("Threshold handles exactly at threshold value")
+    @Test("Threshold handles exactly at threshold value (gamma-aware)")
     func thresholdExactlyAtThreshold() {
         let ditherer = ThresholdDither()
-        let pixels: [UInt8] = [127, 128, 129]
+        // With gamma-aware threshold (0.5 linear):
+        // - sRGB 187 = linear 0.497 → black
+        // - sRGB 188 = linear 0.503 → white
+        // - sRGB 189 = linear 0.509 → white
+        let pixels: [UInt8] = [187, 188, 189]
 
         let result = ditherer.dither(pixels: pixels, width: 3, height: 1)
 
-        #expect(result[0] == 255)  // 127 < 128 → black
-        #expect(result[1] == 0)    // 128 >= 128 → white
-        #expect(result[2] == 0)    // 129 >= 128 → white
+        #expect(result[0] == 255)  // 187 (0.497 linear) < 0.5 → black
+        #expect(result[1] == 0)    // 188 (0.503 linear) >= 0.5 → white
+        #expect(result[2] == 0)    // 189 (0.509 linear) >= 0.5 → white
     }
 
-    @Test("Threshold custom threshold value works")
+    @Test("Threshold custom threshold value works (sRGB threshold converted to linear)")
     func thresholdCustomThreshold() {
+        // When using sRGB threshold, it's converted to linear internally
+        // sRGB 200 = ~0.58 linear
+        // sRGB 199 < 0.58 linear → black
+        // sRGB 200 >= 0.58 linear → white (at threshold)
+        // sRGB 201 >= 0.58 linear → white
         let ditherer = ThresholdDither(threshold: 200)
         let pixels: [UInt8] = [199, 200, 201]
 
         let result = ditherer.dither(pixels: pixels, width: 3, height: 1)
 
-        #expect(result[0] == 255)  // 199 < 200 → black
-        #expect(result[1] == 0)    // 200 >= 200 → white
-        #expect(result[2] == 0)    // 201 >= 200 → white
+        #expect(result[0] == 255)  // 199 < 0.58 linear → black
+        #expect(result[1] == 0)    // 200 >= 0.58 linear → white
+        #expect(result[2] == 0)    // 201 >= 0.58 linear → white
     }
 
     @Test("Threshold returns empty for empty input")
@@ -141,11 +150,11 @@ struct DitherAlgorithmTests {
         #expect(result.allSatisfy { $0 == 0 })
     }
 
-    @Test("FloydSteinberg handles mid-gray with error diffusion")
+    @Test("FloydSteinberg handles mid-gray with error diffusion (gamma-aware)")
     func floydSteinbergMidGray() {
         let ditherer = FloydSteinbergDither()
-        // Mid-gray should produce a mix of black and white
-        let pixels = [UInt8](repeating: 128, count: 64)
+        // sRGB 188 = ~0.503 linear (perceptual mid-gray), should produce ~50/50 mix
+        let pixels = [UInt8](repeating: 188, count: 64)
 
         let result = ditherer.dither(pixels: pixels, width: 8, height: 8)
 
@@ -156,6 +165,9 @@ struct DitherAlgorithmTests {
         #expect(blackCount > 0)
         #expect(whiteCount > 0)
         #expect(blackCount + whiteCount == 64)
+        // With gamma-aware, sRGB 188 should be close to 50% black
+        let blackPercent = Float(blackCount) / 64.0
+        #expect(blackPercent > 0.35 && blackPercent < 0.65)
     }
 
     // MARK: - Atkinson Tests

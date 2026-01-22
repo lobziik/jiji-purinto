@@ -7,14 +7,14 @@
 
 import Foundation
 
-/// Atkinson dithering algorithm.
+/// Atkinson dithering algorithm with gamma-aware processing.
 ///
+/// Performs dithering in linear color space for perceptually correct results.
 /// A variant of error diffusion that produces a distinctive "vintage" look.
 /// Only diffuses 6/8 of the error, causing darker areas to become pure black
-/// and lighter areas to become pure white. Best suited for:
-/// - Vintage/retro aesthetic
-/// - Line art with some shading
-/// - Reducing ink usage
+/// and lighter areas to become pure white.
+///
+/// Reference: https://www.nayuki.io/page/gamma-aware-image-dithering
 ///
 /// ## Error Distribution
 /// ```
@@ -25,29 +25,46 @@ import Foundation
 ///
 /// Note: Only 6/8 of error is diffused, 2/8 is discarded.
 struct AtkinsonDither: DitherAlgorithmProtocol, Sendable {
+    /// Precomputed sRGB → Linear lookup table for performance.
+    ///
+    /// Converts sRGB gamma-encoded values (0-255) to linear light values (0.0-1.0).
+    /// Uses the standard sRGB transfer function.
+    private static let srgbToLinearTable: [Float] = {
+        (0..<256).map { i in
+            let x = Float(i) / 255.0
+            if x <= 0.04045 {
+                return x / 12.92
+            } else {
+                return powf((x + 0.055) / 1.055, 2.4)
+            }
+        }
+    }()
+
     func dither(pixels: [UInt8], width: Int, height: Int) -> [UInt8] {
         guard pixels.count == width * height, width > 0, height > 0 else {
             return []
         }
 
-        // Work with Float for error accumulation
-        var buffer = pixels.map { Float($0) }
+        // Convert to LINEAR space for correct error diffusion
+        var buffer = pixels.map { Self.srgbToLinearTable[Int($0)] }
         var result = [UInt8](repeating: 0, count: pixels.count)
 
         for y in 0..<height {
             for x in 0..<width {
                 let index = y * width + x
-                let oldPixel = buffer[index]
+                let oldPixel = buffer[index]  // In linear space
 
-                // Quantize to black or white
-                let newPixel: Float = oldPixel >= 128 ? 255 : 0
-                result[index] = newPixel == 0 ? 255 : 0  // Invert: 0=white in output, 255=black
+                // Quantize with threshold 0.5 in LINEAR space (not 128 in sRGB!)
+                let newPixel: Float = oldPixel >= 0.5 ? 1.0 : 0.0
 
-                // Calculate quantization error (only diffuse 6/8 = 3/4)
+                // Output: 255 = black, 0 = white (for MonoBitmap)
+                result[index] = newPixel == 0 ? 255 : 0
+
+                // Calculate quantization error in linear space (only diffuse 6/8 = 3/4)
                 let error = oldPixel - newPixel
                 let diffusedError = error / 8
 
-                // Distribute error to 6 neighbors
+                // Distribute error to 6 neighbors (in linear space!)
                 // Right: 1/8
                 if x + 1 < width {
                     buffer[index + 1] += diffusedError

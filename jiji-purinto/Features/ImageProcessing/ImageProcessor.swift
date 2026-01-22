@@ -176,8 +176,11 @@ actor ImageProcessor {
         }
 
         // 9. Convert to UIImage for display
+        // Dithered pixels use 0=white, 255=black (for MonoBitmap/printer)
+        // Display expects 0=black, 255=white, so we invert
+        let displayPixels = ditheredPixels.map { $0 == 0 ? UInt8(255) : UInt8(0) }
         return try pixelsToUIImage(
-            ditheredPixels,
+            displayPixels,
             width: resized.width,
             height: resized.height
         )
