@@ -47,6 +47,11 @@ final class BLEPeripheral: NSObject, @unchecked Sendable {
     /// Notification stream continuations keyed by characteristic UUID.
     private let notificationContinuations = OSAllocatedUnfairLock<[CBUUID: AsyncStream<Data>.Continuation]>(initialState: [:])
 
+    /// Continuation for write-without-response ready signal.
+    ///
+    /// Used for flow control when `canSendWriteWithoutResponse` is false.
+    private let writeReadyContinuation = OSAllocatedUnfairLock<CheckedContinuation<Void, Never>?>(initialState: nil)
+
     /// Creates a wrapper around the given peripheral.
     ///
     /// - Parameter peripheral: The connected CBPeripheral to wrap.
@@ -119,6 +124,27 @@ final class BLEPeripheral: NSObject, @unchecked Sendable {
         return characteristic
     }
 
+    /// Waits until the peripheral is ready to accept write-without-response data.
+    ///
+    /// CoreBluetooth's `canSendWriteWithoutResponse` returns `false` when its internal
+    /// buffer is full. This method waits for the `peripheralIsReady(toSendWriteWithoutResponse:)`
+    /// callback, which fires when buffer space becomes available.
+    ///
+    /// Call this before each write-without-response to implement proper flow control
+    /// and prevent silent data loss from buffer overflow.
+    private func waitForWriteReady() async {
+        guard !peripheral.canSendWriteWithoutResponse else {
+            peripheralLogger.trace("Write ready immediately")
+            return
+        }
+
+        peripheralLogger.trace("Buffer full, waiting for write ready...")
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            writeReadyContinuation.withLock { $0 = continuation }
+        }
+        peripheralLogger.trace("Write ready signal received")
+    }
+
     /// Writes data to a characteristic.
     ///
     /// - Parameters:
@@ -162,8 +188,11 @@ final class BLEPeripheral: NSObject, @unchecked Sendable {
                 throw .writeFailed(error)
             }
         } else {
-            // Write without response - fire and forget
-            peripheralLogger.trace("Writing without response (fire and forget)")
+            // Write without response - use flow control to prevent buffer overflow
+            // Wait for buffer space if CoreBluetooth's internal buffer is full
+            await waitForWriteReady()
+
+            peripheralLogger.trace("Writing without response")
             peripheral.writeValue(data, for: characteristic, type: type)
             peripheralLogger.trace("Write dispatched to CoreBluetooth")
         }
@@ -312,6 +341,19 @@ extension BLEPeripheral: CBPeripheralDelegate {
 
         notificationContinuations.withLock { continuations in
             _ = continuations[characteristic.uuid]?.yield(value)
+        }
+    }
+
+    /// Called when the peripheral is ready to accept more write-without-response data.
+    ///
+    /// This callback fires when CoreBluetooth's internal buffer has space after
+    /// `canSendWriteWithoutResponse` was `false`. Resumes the waiting continuation
+    /// set by `waitForWriteReady()`.
+    nonisolated func peripheralIsReady(toSendWriteWithoutResponse peripheral: CBPeripheral) {
+        peripheralLogger.trace("peripheralIsReady called - buffer has space")
+        writeReadyContinuation.withLock { continuation in
+            continuation?.resume()
+            continuation = nil
         }
     }
 }

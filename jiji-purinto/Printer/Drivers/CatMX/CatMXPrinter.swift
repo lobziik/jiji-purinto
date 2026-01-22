@@ -218,9 +218,8 @@ final class CatMXPrinter: ThermalPrinter {
                 try await sendCommand(lineCmd, to: characteristic)
                 rowsSentCount += 1
 
-                // Per-row delay to prevent printer buffer overflow
-                // 2ms per row is conservative; TypeScript reference uses similar timing
-                try? await Task.sleep(nanoseconds: CatMXConstants.printRowDelayNs)
+                // No per-row delay needed - BLEPeripheral.waitForWriteReady() provides
+                // flow control by waiting when CoreBluetooth's buffer is full
 
                 // Report progress every 10 rows
                 if row % 10 == 0 || row == totalRows - 1 {
@@ -344,6 +343,11 @@ final class CatMXPrinter: ThermalPrinter {
     /// Commands must be sent as complete packets. CoreBluetooth handles
     /// MTU negotiation automatically - manual chunking breaks the protocol.
     ///
+    /// Uses `.withoutResponse` since the printer's write characteristic doesn't
+    /// support acknowledged writes. Flow control is handled by `BLEPeripheral`
+    /// via `canSendWriteWithoutResponse` and `peripheralIsReady` callback to
+    /// prevent buffer overflow and silent data loss.
+    ///
     /// - Parameters:
     ///   - command: The command data to send.
     ///   - characteristic: The characteristic to write to.
@@ -358,6 +362,7 @@ final class CatMXPrinter: ThermalPrinter {
 
         // Send command as a single write - CoreBluetooth handles MTU negotiation
         // DO NOT split commands manually - it corrupts the packet structure
+        // Flow control is handled by BLEPeripheral.waitForWriteReady()
         try await blePeripheral.write(data: command, to: characteristic, type: .withoutResponse)
     }
 }
