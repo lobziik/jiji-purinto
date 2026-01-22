@@ -164,10 +164,12 @@ struct ImageProcessorTests {
     @Test("Brightness affects output")
     func brightnessAffectsOutput() async throws {
         let processor = ImageProcessor()
-        let testImage = createTestImage(width: 400, height: 100, color: .gray)
+        // Use a specific mid-gray that will show clear differences with brightness adjustments
+        // sRGB 188 is approximately 50% linear (perceptual middle gray)
+        let testImage = createTestImage(width: 400, height: 100, color: UIColor(white: 188.0/255.0, alpha: 1.0))
 
         let darkSettings = ImageSettings(
-            brightness: -0.5,
+            brightness: -0.3,  // Make darker
             contrast: 1,
             algorithm: .threshold,
             gamma: 1.0,
@@ -175,7 +177,7 @@ struct ImageProcessorTests {
             clipPercent: 1.0
         )
         let brightSettings = ImageSettings(
-            brightness: 0.5,
+            brightness: 0.3,  // Make brighter
             contrast: 1,
             algorithm: .threshold,
             gamma: 1.0,
@@ -202,7 +204,7 @@ struct ImageProcessorTests {
 
         // Darker settings should produce more black pixels
         #expect(darkBlackCount > brightBlackCount,
-                "Darker settings should produce more black pixels")
+                "Darker settings (\(darkBlackCount)) should produce more black pixels than brighter settings (\(brightBlackCount))")
     }
 
     // MARK: - Preview Tests
