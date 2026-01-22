@@ -19,11 +19,17 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 # Build
 xcodebuild build -scheme jiji-purinto -project jiji-purinto.xcodeproj
 
-# Run tests (unit + UI)
+# Run all tests (unit + UI)
 xcodebuild test -scheme jiji-purinto -project jiji-purinto.xcodeproj -destination 'platform=iOS Simulator,name=iPhone 16'
 
 # Run only unit tests
 xcodebuild test -scheme jiji-purinto -project jiji-purinto.xcodeproj -destination 'platform=iOS Simulator,name=iPhone 16' -only-testing:jiji-purintoTests
+
+# Run a single test file (example: FSM tests)
+xcodebuild test -scheme jiji-purinto -project jiji-purinto.xcodeproj -destination 'platform=iOS Simulator,name=iPhone 16' -only-testing:jiji-purintoTests/AppFSMTransitionTests
+
+# Run a single test method
+xcodebuild test -scheme jiji-purinto -project jiji-purinto.xcodeproj -destination 'platform=iOS Simulator,name=iPhone 16' -only-testing:'jiji-purintoTests/AppFSMTransitionTests/idle_openGallery_transitionsToSelecting'
 
 # Archive for distribution
 xcodebuild archive -scheme jiji-purinto -project jiji-purinto.xcodeproj -archivePath build/JijiPurinto.xcarchive
@@ -211,11 +217,6 @@ struct PrinterFSMTests {
 ## Reference Documentation
 
 - `MILESTONES.md` - Progress checklist for all milestones (v0.1 through v1.0)
-- `jiji-purinto-ios-outline.md` - Comprehensive project specification including:
-  - FSM state/event definitions with transition tables
-  - Image processing pipeline and algorithm specs
-  - Cat/MX printer protocol details and command formats
-  - UI screen layouts and flows
 
 ## Distribution
 
