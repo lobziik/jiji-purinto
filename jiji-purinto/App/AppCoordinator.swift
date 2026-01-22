@@ -73,6 +73,18 @@ final class AppCoordinator: ObservableObject {
             }
             .store(in: &cancellables)
 
+        // Subscribe to print interruption notifications
+        printerCoordinator.onPrintInterrupted = { [weak self] error in
+            Task { @MainActor [weak self] in
+                guard let self = self else { return }
+                if case .printing = self.state {
+                    let appError = AppError.printingFailed(reason: "Connection lost: \(error.localizedDescription)")
+                    appLogger.error("Print interrupted by connection loss: \(error.localizedDescription)")
+                    try? self.send(.printFailed(appError))
+                }
+            }
+        }
+
         // Attempt to reconnect to last printer on launch
         Task {
             await printerCoordinator.reconnectToLast()
@@ -259,7 +271,11 @@ final class AppCoordinator: ObservableObject {
         do {
             let bitmap = try PrinterTestPatterns.toMonoBitmap(data: data, height: height)
             try send(.print)
-            try await printerCoordinator.print(bitmap: bitmap)
+            try await printerCoordinator.print(bitmap: bitmap) { [weak self] progress in
+                Task { @MainActor [weak self] in
+                    try? self?.send(.printProgress(Float(progress)))
+                }
+            }
             try send(.printSuccess)
         } catch let error as PrinterError {
             try? send(.printFailed(.printingFailed(reason: error.localizedDescription)))
@@ -339,7 +355,11 @@ final class AppCoordinator: ObservableObject {
 
         // Print the bitmap with progress updates
         do {
-            try await printerCoordinator.print(bitmap: bitmap)
+            try await printerCoordinator.print(bitmap: bitmap) { [weak self] progress in
+                Task { @MainActor [weak self] in
+                    try? self?.send(.printProgress(Float(progress)))
+                }
+            }
         } catch {
             let appError = AppError.printingFailed(reason: error.localizedDescription)
             try? send(.printFailed(appError))

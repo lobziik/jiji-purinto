@@ -70,6 +70,12 @@ final class PrinterCoordinator: ObservableObject {
     /// Whether auto-reconnection is currently in progress.
     @Published private(set) var isReconnecting: Bool = false
 
+    /// Callback invoked when print is interrupted by connection loss.
+    ///
+    /// This allows the AppCoordinator to transition to an error state when
+    /// a print operation is interrupted by an unexpected disconnection.
+    var onPrintInterrupted: ((PrinterError) -> Void)?
+
     // MARK: - Initialization
 
     init() {
@@ -95,6 +101,9 @@ final class PrinterCoordinator: ObservableObject {
 
         coordinatorLogger.warning("Printer connection lost unexpectedly from state: \(String(describing: self.state))")
 
+        // Capture whether printing was in progress before state change
+        let wasInBusy = isPrinting
+
         // Capture device info before transitioning to error state
         let deviceId = lastConnectedDeviceId
         let deviceName = lastConnectedDeviceName
@@ -103,6 +112,12 @@ final class PrinterCoordinator: ObservableObject {
             try send(.connectionLost)
         } catch {
             coordinatorLogger.error("Failed to send connectionLost event: \(error.localizedDescription)")
+        }
+
+        // Notify about interrupted print
+        if wasInBusy {
+            coordinatorLogger.warning("Print operation interrupted by connection loss")
+            onPrintInterrupted?(.connectionLost)
         }
 
         // Start background reconnection if we have device info
@@ -358,9 +373,11 @@ final class PrinterCoordinator: ObservableObject {
 
     /// Prints a bitmap image.
     ///
-    /// - Parameter bitmap: The 1-bit bitmap to print.
+    /// - Parameters:
+    ///   - bitmap: The 1-bit bitmap to print.
+    ///   - onProgress: Optional callback for progress updates (0.0 to 1.0).
     /// - Throws: `PrinterError` if printing fails.
-    func print(bitmap: MonoBitmap) async throws(PrinterError) {
+    func print(bitmap: MonoBitmap, onProgress: ((Double) -> Void)? = nil) async throws(PrinterError) {
         coordinatorLogger.info("Print requested: \(bitmap.width)x\(bitmap.height) bitmap")
         coordinatorLogger.debug("Current state: \(String(describing: self.state))")
         coordinatorLogger.debug("canPrint: \(self.state.canPrint)")
@@ -386,6 +403,7 @@ final class PrinterCoordinator: ObservableObject {
                 Task { @MainActor [weak self] in
                     self?.printProgress = progress
                     self?.updateStatus()
+                    onProgress?(progress)
                 }
             }
 
@@ -426,6 +444,35 @@ final class PrinterCoordinator: ObservableObject {
 
     // MARK: - Auto-Reconnection
 
+    /// Forces coordinator to disconnected state, bypassing FSM if needed.
+    ///
+    /// This is a recovery mechanism used when FSM transitions fail and the
+    /// coordinator gets stuck in an intermediate state. It should only be
+    /// used as a last resort when proper FSM transitions are not possible.
+    private func forceDisconnectedState() {
+        if case .disconnected = state {
+            status = .disconnected
+            return
+        }
+
+        // Try FSM transition first
+        if case .error = state {
+            do {
+                try send(.reset)
+                return
+            } catch {
+                coordinatorLogger.error("FSM reset failed, forcing state: \(error.localizedDescription)")
+            }
+        }
+
+        // Force state if FSM transition failed or state wasn't error
+        coordinatorLogger.warning("Forcing state to disconnected (was: \(String(describing: self.state)))")
+        state = .disconnected
+        status = .disconnected
+        isPrinting = false
+        isScanning = false
+    }
+
     /// Attempts to automatically reconnect to a printer after connection loss.
     ///
     /// This method runs in the background and attempts to reconnect up to
@@ -454,8 +501,22 @@ final class PrinterCoordinator: ObservableObject {
 
             // Reset from error state to allow reconnection
             do {
+                // Ensure we're in a state that can accept .reconnect event
                 if case .error = state {
                     try send(.reset)
+                } else if case .connecting = state {
+                    // State may be stuck in connecting from previous failed attempt
+                    // Force recovery to disconnected state
+                    coordinatorLogger.warning("Stuck in connecting state, forcing recovery")
+                    forceDisconnectedState()
+                }
+
+                // Ensure we're in disconnected state before attempting reconnect
+                if case .disconnected = state {
+                    // Already in correct state, proceed
+                } else {
+                    coordinatorLogger.warning("Cannot reconnect from state: \(String(describing: self.state)), forcing recovery")
+                    forceDisconnectedState()
                 }
 
                 try send(.reconnect(deviceId: deviceId))
@@ -486,7 +547,9 @@ final class PrinterCoordinator: ObservableObject {
                     do {
                         try send(.connectFailed(.connectionFailed(reason: "Reconnection attempt \(reconnectAttempts) failed")))
                     } catch {
-                        coordinatorLogger.error("Failed to send connectFailed: \(error.localizedDescription)")
+                        coordinatorLogger.error("Failed to send connectFailed, forcing state recovery: \(error.localizedDescription)")
+                        // Force recovery if FSM transition failed
+                        forceDisconnectedState()
                     }
                 }
 
@@ -503,14 +566,8 @@ final class PrinterCoordinator: ObservableObject {
         isReconnecting = false
         reconnectAttempts = 0
 
-        // Ensure we're in disconnected state (not error)
-        if case .error = state {
-            do {
-                try send(.reset)
-            } catch {
-                coordinatorLogger.error("Failed to reset after reconnection failure: \(error.localizedDescription)")
-            }
-        }
+        // Ensure we're in disconnected state using forced recovery
+        forceDisconnectedState()
     }
 
     /// Cancels any ongoing auto-reconnection attempts.

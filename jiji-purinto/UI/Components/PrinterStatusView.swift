@@ -68,6 +68,12 @@ struct PrinterStatusView: View {
     }
 
     /// Handles tap on the status indicator.
+    ///
+    /// Allows interaction in all states except printing, enabling users to:
+    /// - Start scanning when disconnected
+    /// - Cancel operations when scanning/connecting
+    /// - View or disconnect when ready
+    /// - Cancel reconnection and try manually when reconnecting
     private func handleTap() {
         switch printerCoordinator.status {
         case .disconnected, .error:
@@ -78,7 +84,14 @@ struct PrinterStatusView: View {
         case .reconnecting:
             // Allow user to open scan sheet during reconnection to cancel or try manually
             showingScanSheet = true
-        default:
+        case .scanning:
+            // Allow user to cancel scan or see results
+            showingScanSheet = true
+        case .connecting:
+            // Allow user to cancel connection attempt
+            showingScanSheet = true
+        case .printing:
+            // Only printing blocks interaction - user must wait
             break
         }
     }
@@ -155,12 +168,14 @@ struct PrinterScanSheet: View {
     var body: some View {
         NavigationStack {
             VStack {
-                if printerCoordinator.isScanning {
-                    scanningView
-                } else if printerCoordinator.discoveredPrinters.isEmpty {
-                    emptyStateView
+                if printerCoordinator.discoveredPrinters.isEmpty {
+                    if printerCoordinator.isScanning {
+                        scanningView       // Spinner only when no printers found yet
+                    } else {
+                        emptyStateView     // "No printers found" after scan completes
+                    }
                 } else {
-                    printerListView
+                    printerListView        // Show list immediately when printers found
                 }
             }
             .navigationTitle("Printers")
@@ -237,6 +252,19 @@ struct PrinterScanSheet: View {
     /// View showing discovered printers.
     private var printerListView: some View {
         List {
+            // Show scanning indicator if still scanning
+            if printerCoordinator.isScanning {
+                Section {
+                    HStack {
+                        ProgressView()
+                            .scaleEffect(0.8)
+                        Text("Scanning...")
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                    }
+                }
+            }
+
             if printerCoordinator.isReady {
                 Section("Connected") {
                     if let name = printerCoordinator.printerName {
