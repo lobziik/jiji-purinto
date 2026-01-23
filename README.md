@@ -9,8 +9,9 @@ iOS app.
 - Three-tap workflow (select a photo → preview → print)
 - Dithering preview with couple algorithms
 - Direct connection to Cat/MX thermal printer via BLE
-- System frameworks only (SwiftUI, CoreBluetooth, Accelerate)
+- System frameworks only (SwiftUI, CoreBluetooth)
 
+```
 ┌─────────────┐     ┌─────────────┐     ┌─────────────┐
 │   Photo     │ ──► │  Dithering  │ ──► │   Print     │
 │   Picker    │     │  Preview    │     │   Button    │
@@ -20,6 +21,7 @@ iOS app.
                     │ BLE → MX11  │
                     │  384px/row  │
                     └─────────────┘
+```
 
 ## Requirements
 
@@ -99,17 +101,19 @@ jiji-purinto/
 
 ## Distribution
 
-Ad-hoc distribution via:
-
-- AltStore (7-day refresh)
-- Sideloadly
-- Apple Configurator
+Ad-hoc. Build yourself.
 
 ## Documentation
 
 - [CLAUDE.md](CLAUDE.md) - Development guidelines for Claude Code
 - [docs/catmx-protocol.md](docs/catmx-protocol.md) - Thermal printer protocol specification
 
-## License
+---
+```
+FUTURE GADGET #%^?: JIJI-PURINTO
+STATUS: OPERATIONAL
+DIVERGENCE: ██████ (ACCEPTABLE)
 
-MIT
+AI assistant helped. Suspicious, but productive.
+Cat was present. Cat always present. Coincidence rate: 0%.
+```
