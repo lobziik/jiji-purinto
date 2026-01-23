@@ -1,20 +1,37 @@
 # Jiji-Purinto (ジジプリント)
 
-Native iOS app for printing photos on a BLE thermal printer with a toddler-friendly interface.
+Native iOS app for printing photos on a BLE thermal printer with, presumably, a toddler-friendly interface.
 
 ## Features
 
-- **Simple UI**: Three-tap workflow (select photo → preview → print)
-- **Image Processing**: Real-time dithering preview with multiple algorithms
-- **BLE Printing**: Direct connection to Cat/MX thermal printers
-- **Zero Dependencies**: System frameworks only (SwiftUI, CoreBluetooth, Accelerate)
+- Three-tap workflow (select a photo → preview → print)
+- Dithering preview with couple algorithms
+- Direct connection to Cat/MX thermal printer via BLE
+- System frameworks only (SwiftUI, CoreBluetooth, Accelerate)
+
+┌─────────────┐     ┌─────────────┐     ┌─────────────┐
+│   Photo     │ ──► │  Dithering  │ ──► │   Print     │
+│   Picker    │     │  Preview    │     │   Button    │
+└─────────────┘     └─────────────┘     └─────────────┘
+                           │
+                    ┌──────┴──────┐
+                    │ BLE → MX11  │
+                    │  384px/row  │
+                    └─────────────┘
 
 ## Requirements
 
 - iOS 16.0+
 - Xcode 15.0+
 - Swift 5.9+
-- Cat/MX family thermal printer (MX05-MX11, GB01-03)
+- Cat/MX family thermal printer (MX05-MX11, probably GB01-03)
+    - Tested only with MX11
+
+## Similar things and references
+- [@opuu/cat-printer](https://github.com/opuu/cat-printer)
+- [bitbank2/Thermal_Printer](https://github.com/bitbank2/Thermal_Printer)
+- [bitbank2/Print2BLE](https://github.com/bitbank2/Print2BLE)
+- https://hackaday.com/tag/mini-printer/
 
 ## Build
 
@@ -50,14 +67,6 @@ disconnected → scanning → connecting → ready → busy
 ```
 UIImage → Normalize → Resize (384px) → Grayscale → Brightness/Contrast → Dither → MonoBitmap
 ```
-
-**Dither Algorithms:**
-| Algorithm | Best For |
-|-----------|----------|
-| `threshold` | Text, line art |
-| `floydSteinberg` | Photos, gradients |
-| `atkinson` | Vintage look, less ink |
-| `ordered` | Patterns, retro style |
 
 ## Printer Protocol
 
@@ -97,7 +106,6 @@ Ad-hoc distribution via:
 ## Documentation
 
 - [CLAUDE.md](CLAUDE.md) - Development guidelines for Claude Code
-- [MILESTONES.md](MILESTONES.md) - Project progress tracking
 - [docs/catmx-protocol.md](docs/catmx-protocol.md) - Thermal printer protocol specification
 
 ## License

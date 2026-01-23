@@ -35,7 +35,7 @@ Cat/MX printers do **not** advertise their service UUID during BLE scan. Filter 
 All commands follow this structure:
 
 ```
-┌─────────┬─────────┬─────────┬──────────┬───────────┬───────────┬──────────┬─────────┐
+┌─────────┬─────────┬─────────┬──────────┬───────────┬───────────┬──────────┬─────────┐─────────┐
 │ 0x51    │ 0x78    │ Command │ Reserved │ Length Lo │ Length Hi │ Payload  │ CRC8    │ 0xFF    │
 │ (magic) │ (magic) │ (1B)    │ (0x00)   │ (1B)      │ (1B)      │ (N bytes)│ (1B)    │ (end)   │
 └─────────┴─────────┴─────────┴──────────┴───────────┴───────────┴──────────┴─────────┴─────────┘
@@ -197,12 +197,13 @@ Requests printer status.
 **Response format**: Same packet structure with status byte in payload.
 
 **Status bits**:
-| Bit | Meaning |
-|-----|---------|
-| `0x00` | Ready |
+
+| Bit    | Meaning                  |
+|--------|--------------------------|
+| `0x00` | Ready                    |
 | `0x01` | Paper error (out/jammed) |
-| `0x02` | Overheated |
-| `0x04` | Low battery |
+| `0x02` | Overheated               |
+| `0x04` | Low battery              |
 
 ### Get Device Info (0xA8)
 
