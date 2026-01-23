@@ -2,7 +2,9 @@
 
 Native iOS app for printing photos on a BLE thermal printer with, presumably, a toddler-friendly interface.
 
-## Features
+## What's that?
+
+iOS app.
 
 - Three-tap workflow (select a photo → preview → print)
 - Dithering preview with couple algorithms
