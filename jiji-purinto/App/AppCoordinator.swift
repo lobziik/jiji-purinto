@@ -214,6 +214,25 @@ final class AppCoordinator: ObservableObject {
         isProcessing = false
     }
 
+    /// Returns the processed image at print resolution (384px) for sharing.
+    ///
+    /// Unlike the preview (which may use lower resolution for fast UI updates),
+    /// this returns the full print-resolution dithered image suitable for export.
+    ///
+    /// - Returns: Dithered UIImage at print resolution.
+    /// - Throws: `ProcessingError` if no image is selected or processing fails.
+    func getShareableImage() async throws(ProcessingError) -> UIImage {
+        guard let original = originalImage else {
+            throw .invalidImage
+        }
+
+        return try await imageProcessor.quickPreview(
+            image: original,
+            settings: imageSettings,
+            previewWidth: PrinterConstants.printWidth
+        )
+    }
+
     /// Re-processes the current image with updated settings.
     ///
     /// Called when settings change in the preview screen.

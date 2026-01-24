@@ -219,6 +219,17 @@ final class PrinterCoordinator: ObservableObject {
                 return
             }
             event = .startScan
+        } else if case .connecting = state {
+            // Cancel connection attempt and start scan
+            coordinatorLogger.debug("Cancelling connection attempt to start scanning")
+            do {
+                try send(.connectFailed(.connectionFailed(reason: "Cancelled by user")))
+                try send(.reset)
+            } catch {
+                coordinatorLogger.error("Failed to cancel connection: \(error.localizedDescription)")
+                return
+            }
+            event = .startScan
         } else {
             guard state.canStartScan else {
                 coordinatorLogger.warning("Cannot start scan from state: \(String(describing: self.state))")

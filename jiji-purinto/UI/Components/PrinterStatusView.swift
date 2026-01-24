@@ -168,14 +168,14 @@ struct PrinterScanSheet: View {
     var body: some View {
         NavigationStack {
             VStack {
-                if printerCoordinator.discoveredPrinters.isEmpty {
+                if printerCoordinator.discoveredPrinters.isEmpty && !printerCoordinator.isReady {
                     if printerCoordinator.isScanning {
                         scanningView       // Spinner only when no printers found yet
                     } else {
                         emptyStateView     // "No printers found" after scan completes
                     }
                 } else {
-                    printerListView        // Show list immediately when printers found
+                    printerListView        // Show list when printers found OR connected
                 }
             }
             .navigationTitle("Printers")

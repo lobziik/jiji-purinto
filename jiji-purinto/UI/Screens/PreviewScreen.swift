@@ -30,32 +30,54 @@ struct PreviewScreen: View {
         VStack(spacing: 0) {
             // Navigation bar
             HStack {
-                Button(action: onBack) {
-                    Image(systemName: "chevron.left")
-                        .font(.system(size: 20, weight: .semibold))
-                        .foregroundColor(.accentColor)
-                        .frame(width: 44, height: 44)
+                // Left side: navigation
+                HStack(spacing: 0) {
+                    Button(action: onBack) {
+                        Image(systemName: "chevron.left")
+                            .font(.system(size: 20, weight: .semibold))
+                            .foregroundColor(.accentColor)
+                            .frame(width: 44, height: 44)
+                    }
+                    .accessibilityLabel("Back")
+
+                    Button {
+                        coordinator.showingSettings = true
+                    } label: {
+                        Image(systemName: "gearshape")
+                            .font(.system(size: 20))
+                            .foregroundColor(.secondary)
+                            .frame(width: 44, height: 44)
+                    }
+                    .accessibilityLabel("Settings")
                 }
-                .accessibilityLabel("Back")
 
                 Spacer()
 
-                // Processing indicator
+                // Processing indicator (center)
                 if coordinator.isProcessing {
                     ProgressView()
                         .frame(width: 44, height: 44)
                 }
 
-                // Settings button
-                Button {
-                    coordinator.showingSettings = true
-                } label: {
-                    Image(systemName: "gearshape")
-                        .font(.system(size: 20))
-                        .foregroundColor(.secondary)
-                        .frame(width: 44, height: 44)
+                Spacer()
+
+                // Right side: actions
+                HStack(spacing: 0) {
+                    // Share button
+                    Button {
+                        prepareAndShare()
+                    } label: {
+                        Image(systemName: "square.and.arrow.up")
+                            .font(.system(size: 20))
+                            .foregroundColor(.accentColor)
+                            .frame(width: 44, height: 44)
+                    }
+                    .disabled(coordinator.isProcessing)
+                    .accessibilityLabel("Share")
+
+                    // Printer status indicator
+                    PrinterStatusView(printerCoordinator: coordinator.printerCoordinator)
                 }
-                .accessibilityLabel("Settings")
             }
             .padding(.horizontal, 8)
 
@@ -118,6 +140,35 @@ struct PreviewScreen: View {
                 await coordinator.reprocessWithCurrentSettings()
             }
         }
+    }
+
+    // MARK: - Private Methods
+
+    /// Prepares the image at print resolution and shows the share sheet.
+    private func prepareAndShare() {
+        print("[Share] Button tapped - starting")
+        // Use detached task to avoid inheriting MainActor context
+        // This ensures image processing doesn't block the UI
+        let coordinator = self.coordinator
+        print("[Share] Creating detached task")
+        Task.detached(priority: .userInitiated) {
+            print("[Share] Detached task started")
+            do {
+                print("[Share] Calling getShareableImage...")
+                let image = try await coordinator.getShareableImage()
+                print("[Share] Got image, presenting sheet...")
+                await MainActor.run {
+                    print("[Share] On MainActor, calling ShareSheet.present")
+                    ShareSheet.present(items: [image])
+                    print("[Share] ShareSheet.present returned")
+                }
+            } catch {
+                // Fail loud per project conventions - log the error
+                // The user will see that the share sheet didn't open
+                print("[Share] Share preparation failed: \(error)")
+            }
+        }
+        print("[Share] Button handler returning")
     }
 }
 
