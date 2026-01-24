@@ -33,35 +33,19 @@ enum ImageNormalizer {
             throw .invalidImage
         }
 
-        // Use RGB color space for compatibility
-        guard let colorSpace = CGColorSpace(name: CGColorSpace.sRGB) else {
-            throw .invalidImage
+        // Use UIGraphicsImageRenderer which properly handles orientation.
+        // Unlike raw CGContext, UIGraphicsImageRenderer applies the correct
+        // affine transforms based on UIImage.imageOrientation internally.
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1.0  // Use actual pixel dimensions, not scaled
+        format.preferredRange = .standard  // Force 8-bit sRGB, not extended color (16-bit float)
+
+        let renderer = UIGraphicsImageRenderer(size: size, format: format)
+        let normalizedUIImage = renderer.image { _ in
+            image.draw(in: CGRect(origin: .zero, size: size))
         }
 
-        let bitmapInfo = CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue)
-        guard let context = CGContext(
-            data: nil,
-            width: Int(size.width),
-            height: Int(size.height),
-            bitsPerComponent: 8,
-            bytesPerRow: 0,
-            space: colorSpace,
-            bitmapInfo: bitmapInfo.rawValue
-        ) else {
-            throw .invalidImage
-        }
-
-        // Draw with high quality
-        context.interpolationQuality = .high
-
-        // Draw the image, which automatically applies the orientation transform
-        let rect = CGRect(origin: .zero, size: size)
-        UIGraphicsPushContext(context)
-        image.draw(in: rect)
-        UIGraphicsPopContext()
-
-        // Extract the resulting CGImage
-        guard let normalizedImage = context.makeImage() else {
+        guard let normalizedImage = normalizedUIImage.cgImage else {
             throw .invalidImage
         }
 
