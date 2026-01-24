@@ -327,10 +327,22 @@ private final class DelegateHandler: NSObject, CBCentralManagerDelegate, @unchec
     }
 
     /// Waits for Bluetooth to be powered on.
+    ///
+    /// - Throws: `BLEError` if Bluetooth is unavailable, or `CancellationError` if cancelled.
     func waitForPoweredOn() async throws {
-        try await withCheckedThrowingContinuation { continuation in
+        try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { continuation in
+                lock.withLock { state in
+                    // Cancel any existing continuation to prevent orphaning
+                    state.poweredOnContinuation?.resume(throwing: CancellationError())
+                    state.poweredOnContinuation = continuation
+                }
+            }
+        } onCancel: {
+            // Clean up continuation on task cancellation to prevent leak
             lock.withLock { state in
-                state.poweredOnContinuation = continuation
+                state.poweredOnContinuation?.resume(throwing: CancellationError())
+                state.poweredOnContinuation = nil
             }
         }
     }
@@ -425,8 +437,13 @@ private final class DelegateHandler: NSObject, CBCentralManagerDelegate, @unchec
             case .unsupported:
                 state.poweredOnContinuation?.resume(throwing: BLEError.unsupported)
                 state.poweredOnContinuation = nil
-            default:
-                break
+            case .resetting, .unknown:
+                // Transient states - fail fast rather than leave continuation hanging
+                state.poweredOnContinuation?.resume(throwing: BLEError.unavailable)
+                state.poweredOnContinuation = nil
+            @unknown default:
+                state.poweredOnContinuation?.resume(throwing: BLEError.unavailable)
+                state.poweredOnContinuation = nil
             }
         }
     }

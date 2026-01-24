@@ -96,23 +96,8 @@ struct PreviewScreen: View {
 
             Spacer()
 
-            // Button row: Debug Save (if enabled) + Print
+            // Print button
             HStack(spacing: 16) {
-                // Debug: Save to Gallery button (only in debug mode)
-                if DebugConfig.enableDebugMenu {
-                    BigButton("Save PNG", systemImage: "square.and.arrow.down") {
-                        Task {
-                            do {
-                                try await coordinator.saveMonoBitmapToGallery()
-                            } catch {
-                                print("Save failed: \(error)")
-                            }
-                        }
-                    }
-                    .disabled(coordinator.isProcessing)
-                }
-
-                // Print button
                 BigButton("Print", systemImage: "printer") {
                     Task {
                         do {
