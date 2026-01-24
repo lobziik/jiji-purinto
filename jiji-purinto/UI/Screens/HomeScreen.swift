@@ -30,10 +30,9 @@ struct HomeScreen: View {
                 } label: {
                     Image(systemName: "gearshape")
                         .font(.system(size: 20))
-                        .foregroundColor(coordinator.printerCoordinator.isReady ? .primary : .secondary)
+                        .foregroundColor(.primary)
                         .frame(width: 44, height: 44)
                 }
-                .disabled(!coordinator.printerCoordinator.isReady)
                 .accessibilityLabel("Printer settings")
 
                 // Debug button (only visible when debug menu is enabled)
@@ -78,6 +77,7 @@ struct HomeScreen: View {
                     get: { coordinator.printerCoordinator.printerSettings },
                     set: { coordinator.printerCoordinator.updateSettings($0) }
                 ),
+                isConnected: coordinator.printerCoordinator.isReady,
                 onSettingsChanged: { settings in
                     try await coordinator.printerCoordinator.applySettings(settings)
                 }

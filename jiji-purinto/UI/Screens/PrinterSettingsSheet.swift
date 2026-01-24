@@ -19,6 +19,12 @@ struct PrinterSettingsSheet: View {
     /// Binding to the current printer settings.
     @Binding var settings: PrinterSettings
 
+    /// Whether a printer is currently connected.
+    ///
+    /// When `false`, controls are disabled but settings are still viewable.
+    /// Settings are persisted and will be synced on next connection.
+    let isConnected: Bool
+
     /// Callback to apply settings to the printer.
     ///
     /// Called when the user changes a setting. The callback should send
@@ -66,9 +72,14 @@ struct PrinterSettingsSheet: View {
     /// The main form content, extracted to simplify type inference.
     private var formContent: some View {
         Form {
+            printerStatusSection
             qualitySection
+                .disabled(!isConnected)
             energySection
+                .disabled(!isConnected)
             resetSection
+                .disabled(!isConnected)
+            aboutSection
         }
     }
 
@@ -145,6 +156,60 @@ struct PrinterSettingsSheet: View {
         }
     }
 
+    /// Printer connection status section.
+    private var printerStatusSection: some View {
+        Section {
+            HStack {
+                if isConnected {
+                    Image(systemName: "checkmark.circle.fill")
+                        .foregroundColor(.green)
+                    Text("Connected")
+                        .foregroundColor(.primary)
+                } else {
+                    Image(systemName: "info.circle")
+                        .foregroundColor(.secondary)
+                    Text("No printer connected")
+                        .foregroundColor(.secondary)
+                }
+                Spacer()
+            }
+        } footer: {
+            if !isConnected {
+                Text("Settings will be applied when a printer connects.")
+            }
+        }
+    }
+
+    /// About section with app version and links.
+    private var aboutSection: some View {
+        Section {
+            HStack {
+                Text("Version")
+                Spacer()
+                Text(appVersion)
+                    .foregroundColor(.secondary)
+            }
+
+            Link(destination: URL(string: "https://github.com/lobziik/jiji-purinto")!) {
+                HStack {
+                    Text("GitHub")
+                    Spacer()
+                    Image(systemName: "arrow.up.right.square")
+                        .foregroundColor(.secondary)
+                }
+            }
+        } header: {
+            Label("About", systemImage: "info.circle")
+        }
+    }
+
+    /// App version string from Bundle.
+    private var appVersion: String {
+        let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "Unknown"
+        let build = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "Unknown"
+        return "\(version) (\(build))"
+    }
+
     /// Applies the current settings to the printer.
     private func applyCurrentSettings() {
         settingsSheetLogger.info("applyCurrentSettings: sending quality=\(self.settings.quality.rawValue), energy=\(self.settings.energyPercent)% to printer")
@@ -171,9 +236,18 @@ struct PrinterSettingsSheet: View {
 
 // MARK: - Previews
 
-#Preview("Printer Settings Sheet") {
+#Preview("Printer Settings - Connected") {
     PrinterSettingsSheet(
         settings: .constant(.default),
+        isConnected: true,
+        onSettingsChanged: { _ in }
+    )
+}
+
+#Preview("Printer Settings - Disconnected") {
+    PrinterSettingsSheet(
+        settings: .constant(.default),
+        isConnected: false,
         onSettingsChanged: { _ in }
     )
 }
