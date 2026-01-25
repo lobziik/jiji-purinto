@@ -21,52 +21,66 @@ struct HomeScreen: View {
     @State private var showPrinterSettingsSheet = false
 
     var body: some View {
-        VStack(spacing: 0) {
-            // Top bar with settings/debug buttons (left) and printer status (right)
-            HStack {
-                // Printer settings button
-                Button {
-                    showPrinterSettingsSheet = true
-                } label: {
-                    Image(systemName: "gearshape")
-                        .font(.system(size: 20))
-                        .foregroundColor(.primary)
-                        .frame(width: 44, height: 44)
-                }
-                .accessibilityLabel("Printer settings")
-
-                // Debug button (only visible when debug menu is enabled)
-                if DebugConfig.enableDebugMenu {
+        ZStack {
+            VStack(spacing: 0) {
+                // Top bar with settings/debug buttons (left) and printer status (right)
+                HStack {
+                    // Printer settings button
                     Button {
-                        showDebugSheet = true
+                        showPrinterSettingsSheet = true
                     } label: {
-                        Image(systemName: "ladybug")
+                        Image(systemName: "gearshape")
                             .font(.system(size: 20))
-                            .foregroundColor(.secondary)
+                            .foregroundColor(.primary)
                             .frame(width: 44, height: 44)
                     }
-                    .accessibilityLabel("Debug menu")
+                    .accessibilityLabel("Printer settings")
+
+                    // Debug button (only visible when debug menu is enabled)
+                    if DebugConfig.enableDebugMenu {
+                        Button {
+                            showDebugSheet = true
+                        } label: {
+                            Image(systemName: "ladybug")
+                                .font(.system(size: 20))
+                                .foregroundColor(.secondary)
+                                .frame(width: 44, height: 44)
+                        }
+                        .accessibilityLabel("Debug menu")
+                    }
+
+                    Spacer()
+
+                    PrinterStatusView(printerCoordinator: coordinator.printerCoordinator)
+                        .padding()
                 }
 
                 Spacer()
 
-                PrinterStatusView(printerCoordinator: coordinator.printerCoordinator)
-                    .padding()
+                // Gallery button (large, central)
+                BigIconButton(systemImage: "photo.on.rectangle") {
+                    do {
+                        try coordinator.openGallery()
+                    } catch {
+                        print("[HomeScreen] Failed to open gallery: \(error)")
+                    }
+                }
+                .accessibilityLabel("Choose photo from gallery")
+
+                Spacer()
             }
 
-            Spacer()
-
-            // Gallery button (large, central)
-            BigIconButton(systemImage: "photo.on.rectangle") {
-                do {
-                    try coordinator.openGallery()
-                } catch {
-                    print("[HomeScreen] Failed to open gallery: \(error)")
+            // Jiji cat peeking from bottom-right corner
+            VStack {
+                Spacer()
+                HStack {
+                    Spacer()
+                    JijiCatView()
+                        .frame(width: 200, height: 360)
+                        .offset(x: 15, y: -40)
                 }
             }
-            .accessibilityLabel("Choose photo from gallery")
-
-            Spacer()
+            .ignoresSafeArea()
         }
         .sheet(isPresented: $showDebugSheet) {
             DebugMenuSheet(coordinator: coordinator)
