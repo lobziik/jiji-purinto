@@ -23,10 +23,17 @@ enum JijiFrame: String {
 ///
 /// Automatically triggers random idle animations (wink, ear wiggle, blink) at intervals
 /// of 2-5 seconds. Animations hold briefly then return to neutral.
+/// Supports tap interaction with visual feedback and post-tap animation sequence.
 @MainActor
 final class JijiAnimator: ObservableObject {
     /// The current animation frame to display.
     @Published private(set) var currentFrame: JijiFrame = .neutral
+
+    /// Whether the cat is currently being pressed.
+    @Published private(set) var isPressed: Bool = false
+
+    /// Scale factor for tap feedback (1.0 = normal, 0.99 = ~2px smaller on 200px width).
+    var tapScale: CGFloat { isPressed ? 0.99 : 1.0 }
 
     /// Timer for scheduling the next idle animation.
     private var idleTimer: Timer?
@@ -39,6 +46,9 @@ final class JijiAnimator: ObservableObject {
 
     /// Duration to hold the blink animation before returning to neutral.
     private let blinkHoldDuration: TimeInterval = 0.15
+
+    /// Delay before resuming idle animations after post-tap sequence ends.
+    private let postTapResumeDelay: TimeInterval = 0.4
 
     /// Minimum interval between idle animations in seconds.
     private let minIdleInterval: TimeInterval = 2.0
@@ -61,6 +71,47 @@ final class JijiAnimator: ObservableObject {
         idleTimer?.invalidate()
         idleTimer = nil
         currentFrame = .neutral
+        isPressed = false
+    }
+
+    /// Called when tap begins - closes eyes and pauses idle animations.
+    func onTapStart() {
+        idleTimer?.invalidate()
+        idleTimer = nil
+        isPressed = true
+        currentFrame = .blink
+    }
+
+    /// Called when tap ends - opens eyes and plays post-tap sequence.
+    func onTapEnd() {
+        isPressed = false
+        currentFrame = .neutral
+        playPostTapSequence()
+    }
+
+    /// Plays 2 blinks + 1 ear twists after tap release.
+    private func playPostTapSequence() {
+        // Use same hold durations as idle animations
+        let sequence: [(JijiFrame, TimeInterval)] = [
+            (.neutral, 0.2),
+            (.blink, blinkHoldDuration),    // 0.15s
+            (.neutral, 0.4),
+            (.ear, earHoldDuration),        // 0.2s
+            (.neutral, 0)
+        ]
+
+        var delay: TimeInterval = 0
+        for (frame, duration) in sequence {
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+                self?.currentFrame = frame
+            }
+            delay += duration
+        }
+
+        // Resume idle animations 400ms after sequence completes
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay + postTapResumeDelay) { [weak self] in
+            self?.scheduleNextIdleAnimation()
+        }
     }
 
     /// Schedules the next idle animation with a random delay.
@@ -108,10 +159,12 @@ final class JijiAnimator: ObservableObject {
     }
 }
 
-/// An animated Jiji cat view that displays idle animations.
+/// An animated Jiji cat view that displays idle animations and responds to taps.
 ///
 /// The cat displays a neutral pose and periodically performs idle animations
 /// such as winking, blinking, or wiggling its ear. Designed to peek from a corner of the screen.
+/// Tapping the cat provides visual feedback (slight shrink, eyes close) and triggers
+/// a post-tap animation sequence (2 blinks + 2 ear twists).
 struct JijiCatView: View {
     /// The animator managing the cat's animation state.
     @StateObject private var animator = JijiAnimator()
@@ -120,6 +173,20 @@ struct JijiCatView: View {
         Image(animator.currentFrame.rawValue)
             .resizable()
             .aspectRatio(contentMode: .fit)
+            .scaleEffect(animator.tapScale)
+            .animation(nil, value: animator.currentFrame)  // Disable animation for frame changes to prevent white flash
+            .animation(.easeInOut(duration: 0.1), value: animator.tapScale)
+            .gesture(
+                DragGesture(minimumDistance: 0)
+                    .onChanged { _ in
+                        if !animator.isPressed {
+                            animator.onTapStart()
+                        }
+                    }
+                    .onEnded { _ in
+                        animator.onTapEnd()
+                    }
+            )
             .onAppear {
                 animator.startAnimations()
             }
