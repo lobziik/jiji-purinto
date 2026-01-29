@@ -101,7 +101,7 @@ jiji-purinto/
 
 ## Distribution
 
-Ad-hoc. Build yourself.
+Build yourself or get it from the [App Store](https://apps.apple.com/us/app/jiji-purinto/id6758223083).
 
 ## Documentation
 
