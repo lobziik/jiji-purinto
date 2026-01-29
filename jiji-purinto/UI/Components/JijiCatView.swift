@@ -38,6 +38,9 @@ final class JijiAnimator: ObservableObject {
     /// Timer for scheduling the next idle animation.
     private var idleTimer: Timer?
 
+    /// Pending animation work items that can be cancelled on tap.
+    private var pendingWorkItems: [DispatchWorkItem] = []
+
     /// Duration to hold the wink animation before returning to neutral.
     private let winkHoldDuration: TimeInterval = 0.15
 
@@ -70,14 +73,24 @@ final class JijiAnimator: ObservableObject {
     func stopAnimations() {
         idleTimer?.invalidate()
         idleTimer = nil
+        cancelPendingAnimations()
         currentFrame = .neutral
         isPressed = false
+    }
+
+    /// Cancels all pending animation work items.
+    private func cancelPendingAnimations() {
+        for item in pendingWorkItems {
+            item.cancel()
+        }
+        pendingWorkItems.removeAll()
     }
 
     /// Called when tap begins - closes eyes and pauses idle animations.
     func onTapStart() {
         idleTimer?.invalidate()
         idleTimer = nil
+        cancelPendingAnimations()
         isPressed = true
         currentFrame = .blink
     }
@@ -102,16 +115,20 @@ final class JijiAnimator: ObservableObject {
 
         var delay: TimeInterval = 0
         for (frame, duration) in sequence {
-            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+            let workItem = DispatchWorkItem { [weak self] in
                 self?.currentFrame = frame
             }
+            pendingWorkItems.append(workItem)
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: workItem)
             delay += duration
         }
 
-        // Resume idle animations 400ms after sequence completes
-        DispatchQueue.main.asyncAfter(deadline: .now() + delay + postTapResumeDelay) { [weak self] in
+        // Resume idle animations after sequence completes
+        let resumeWorkItem = DispatchWorkItem { [weak self] in
             self?.scheduleNextIdleAnimation()
         }
+        pendingWorkItems.append(resumeWorkItem)
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay + postTapResumeDelay, execute: resumeWorkItem)
     }
 
     /// Schedules the next idle animation with a random delay.
@@ -148,10 +165,12 @@ final class JijiAnimator: ObservableObject {
         currentFrame = animation
 
         // Schedule return to neutral after hold duration
-        DispatchQueue.main.asyncAfter(deadline: .now() + holdDuration) { [weak self] in
+        let workItem = DispatchWorkItem { [weak self] in
             self?.currentFrame = .neutral
             self?.scheduleNextIdleAnimation()
         }
+        pendingWorkItems.append(workItem)
+        DispatchQueue.main.asyncAfter(deadline: .now() + holdDuration, execute: workItem)
     }
 
     deinit {
