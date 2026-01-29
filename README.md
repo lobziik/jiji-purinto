@@ -103,6 +103,8 @@ jiji-purinto/
 
 Build yourself or get it from the [App Store](https://apps.apple.com/us/app/jiji-purinto/id6758223083).
 
+Tags on the repo are corresponding with App Store versions.
+
 ## Documentation
 
 - [CLAUDE.md](CLAUDE.md) - Development guidelines for Claude Code
